@@ -278,6 +278,16 @@ export default function NinebotScreen() {
           )}
         </section>
 
+        {/* Controls — write-side commands (lock/unlock, lights, beep). Hidden
+            until the session is live so we never render dead buttons. The
+            panel itself owns its in-flight / error UI per command. */}
+        <NinebotControlsPanel
+          status={status}
+          model={model}
+          locked={telemetry.locked}
+          onSend={sendCommand}
+        />
+
         {/* The actual scan/connect/retry surface — composed verbatim so
             every improvement to the generic flow flows through here. */}
         <GenericBleScreen />
