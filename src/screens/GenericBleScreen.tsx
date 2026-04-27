@@ -299,11 +299,13 @@ export function GenericBleScreen() {
       try { await genericBle.disconnect(); } catch { /* ignore */ }
     } finally {
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
+      connectInFlightRef.current = false;
     }
   }, [connState]);
 
   const disconnect = useCallback(async () => {
     connectAbortRef.current?.abort();
+    connectInFlightRef.current = false;
     await genericBle.disconnect();
     setConnState("disconnected");
     setConnectPhase({ kind: "idle" });
