@@ -32,6 +32,7 @@ import {
   type GenericDevice, type GenericServiceInfo, type GenericCharInfo,
 } from "@/lib/generic-ble";
 import { detectNinebot } from "@/lib/ninebot-detect";
+import { matchNinebotModel } from "@/lib/ninebot-models";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
 type ConnState = "disconnected" | "connecting" | "connected" | "error";
