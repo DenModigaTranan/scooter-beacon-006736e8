@@ -25,6 +25,7 @@
 import { useMemo } from "react";
 import { Battery, Gauge, Lock, Route as RouteIcon, Zap, Info } from "lucide-react";
 import { GenericBleScreen } from "@/screens/GenericBleScreen";
+import { NinebotSupportedModels } from "@/components/NinebotSupportedModels";
 import { cn } from "@/lib/utils";
 
 interface TelemetryTile {
