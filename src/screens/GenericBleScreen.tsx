@@ -263,6 +263,10 @@ export function GenericBleScreen() {
     setConnState("connecting");
     setConnError(null);
     setServices([]);
+    // Fresh progress strip — every attempt starts as "pending" so the banner
+    // shows N empty tiles immediately on click instead of carrying over the
+    // outcomes from the previous connect run.
+    setAttemptOutcomes(Array.from({ length: MAX_ATTEMPTS }, () => "pending" as const));
     pushLog("info", `Connect requested → ${d.name || d.deviceId.slice(0, 17)}`);
 
     const ac = new AbortController();
