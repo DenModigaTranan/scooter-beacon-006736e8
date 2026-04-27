@@ -901,7 +901,7 @@ export function GenericBleScreen() {
  * the total duration of that run. Auto-hides on success.
  */
 function FailureSummaryChip({
-  data, now,
+  data, now, canRetry, onRetry,
 }: {
   data: {
     entry: LogEntry;
@@ -913,6 +913,11 @@ function FailureSummaryChip({
     failures: LogEntry[];
   } | null;
   now: number;
+  // Whether a fresh connect can be kicked off right now. False while a
+  // connect sequence is mid-flight so the chip's Retry button doesn't race
+  // the orchestrator's own retry loop.
+  canRetry: boolean;
+  onRetry: () => void;
 }) {
   // Click-to-expand drawer state. Auto-collapses when the chip is hidden
   // (data === null) so a fresh successful run doesn't reopen with stale rows
