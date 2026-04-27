@@ -573,6 +573,158 @@ export function GenericBleScreen() {
 // Sub-components
 // ============================================================================
 
+/**
+ * Compact, expandable connection log. Collapsed by default to keep the screen
+ * clean; once opened, shows a scrollable, color-coded list of every attempt,
+ * timeout, backoff, success, cancel and disconnect with absolute timestamps
+ * (HH:MM:SS.mmm) and a relative "Xs ago" hint that auto-refreshes.
+ *
+ * The header always shows the latest event so the user gets a one-line status
+ * even without expanding.
+ */
+function ConnectionLogPanel({
+  entries, onClear, now,
+}: {
+  entries: LogEntry[];
+  onClear: () => void;
+  now: number;
+}) {
+  const [open, setOpen] = useState(false);
+
+  // Latest entry in header — `entries` is already newest-first.
+  const latest = entries[0];
+
+  const meta: Record<LogKind, { label: string; cls: string; dot: string }> = {
+    "attempt-start": { label: "TRY",      cls: "text-primary-glow",      dot: "bg-primary-glow" },
+    "attempt-ok":    { label: "OK",       cls: "text-primary-glow",      dot: "bg-primary-glow" },
+    "timeout":       { label: "TIMEOUT",  cls: "text-warning",           dot: "bg-warning" },
+    "attempt-fail":  { label: "FAIL",     cls: "text-destructive",       dot: "bg-destructive" },
+    "backoff":       { label: "BACKOFF",  cls: "text-warning/80",        dot: "bg-warning/80" },
+    "cancel":        { label: "CANCEL",   cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+    "disconnect":    { label: "DISC",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+    "info":          { label: "INFO",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+  };
+
+  return (
+    <section className="panel overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-secondary/30 transition-colors"
+        aria-expanded={open}
+      >
+        <div className="w-7 h-7 rounded-md bg-secondary flex items-center justify-center shrink-0">
+          <ScrollText className="w-3.5 h-3.5 text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground flex items-center gap-2">
+            <span>Connection log</span>
+            <span className="text-muted-foreground/60 normal-case tracking-normal">
+              {entries.length} {entries.length === 1 ? "event" : "events"}
+            </span>
+          </div>
+          {latest ? (
+            <div className="mono text-[11px] truncate flex items-center gap-1.5">
+              <span className={cn("w-1 h-1 rounded-full shrink-0", meta[latest.kind].dot)} />
+              <span className={cn("shrink-0", meta[latest.kind].cls)}>
+                [{meta[latest.kind].label}]
+              </span>
+              <span className="text-foreground/85 truncate">{latest.message}</span>
+            </div>
+          ) : (
+            <div className="text-[11px] text-muted-foreground/70">No events yet.</div>
+          )}
+        </div>
+        <ChevronDown
+          className={cn(
+            "w-4 h-4 text-muted-foreground transition-transform shrink-0",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="log-body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="border-t border-border/50"
+          >
+            <div className="flex items-center justify-between px-3 py-1.5 bg-secondary/20">
+              <span className="mono text-[9px] tracking-widest uppercase text-muted-foreground/80">
+                Newest first · max {LOG_MAX_ENTRIES}
+              </span>
+              <button
+                type="button"
+                onClick={onClear}
+                disabled={entries.length === 0}
+                className="mono text-[9px] tracking-widest uppercase text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" /> Clear
+              </button>
+            </div>
+            <ul className="max-h-56 overflow-y-auto divide-y divide-border/30">
+              {entries.length === 0 ? (
+                <li className="px-3 py-4 text-center text-[11px] text-muted-foreground/70">
+                  Trigger a connect to see events appear here.
+                </li>
+              ) : (
+                entries.map((e) => (
+                  <li key={e.id} className="px-3 py-1.5 flex items-start gap-2">
+                    <span
+                      className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", meta[e.kind].dot)}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="mono text-[10px] text-muted-foreground/80 flex items-center gap-1.5">
+                        <span>{formatLogTime(e.at)}</span>
+                        <span className="text-muted-foreground/50">·</span>
+                        <span className={meta[e.kind].cls}>{meta[e.kind].label}</span>
+                        <span className="text-muted-foreground/50">·</span>
+                        <span>{formatRelative(e.at, now)}</span>
+                      </div>
+                      <div className="mono text-[11px] text-foreground/90 break-words leading-snug">
+                        {e.message}
+                      </div>
+                    </div>
+                  </li>
+                ))
+              )}
+            </ul>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+/** HH:MM:SS.mmm — fixed width so rows align nicely. */
+function formatLogTime(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+/** Short relative age — "now", "3s ago", "1m 12s ago", "2h ago". */
+function formatRelative(ts: number, now: number): string {
+  const sec = Math.max(0, Math.round((now - ts) / 1000));
+  if (sec < 1) return "now";
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  if (min < 60) return rem ? `${min}m ${rem}s ago` : `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  return `${hr}h ago`;
+}
+
+// ============================================================================
+// Sub-components
+// ============================================================================
+
+
 function ScanStateChip({ state, count }: { state: ScanState; count: number }) {
   const map: Record<ScanState, { label: string; cls: string; dot: string }> = {
     idle:     { label: "IDLE",     cls: "text-muted-foreground", dot: "bg-muted-foreground" },
