@@ -44,6 +44,10 @@ export function ConnectScreen() {
           <PairedScooters
             busy={state === "connecting" || state === "scanning"}
             connectingId={state === "connecting" ? selected?.deviceId ?? null : null}
+            state={state}
+            activeDeviceId={selected?.deviceId ?? null}
+            handshakeOk={handshake?.ok ?? null ? !!handshake?.ok : undefined}
+            errorMessage={errorMessage}
             onReconnect={(deviceId, name) =>
               connect({ deviceId, name, rssi: -127 })
             }
