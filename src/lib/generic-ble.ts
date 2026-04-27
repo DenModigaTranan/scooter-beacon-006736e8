@@ -176,6 +176,7 @@ function buildNinebotMockServices(): MockService[] {
     mode: 1,                   // 0=drive, 1=eco, 2=sport
     odoHundredths: 1284_55,    // units: 0.01 km → starts at 1284.55 km
     locked: 1 as 0 | 1,
+    lights: 0 as 0 | 1,
     sessionKey: null as Uint8Array | null,
     lastPollAt: Date.now(),
   };
