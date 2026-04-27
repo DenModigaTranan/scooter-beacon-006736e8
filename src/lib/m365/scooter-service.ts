@@ -363,12 +363,13 @@ export class ScooterService {
       // Skip non-strict variants when caller opted out.
       if (!cloneTolerant && v.id !== "m365-strict") continue;
       const res = tryVariant(v);
-      if (res.ok) {
+      if (res.ok === true) {
         tried.push(`${v.id}: match`);
         chosen = { variant: v, rxProp: res.rxProp };
         break;
+      } else {
+        tried.push(`${v.id}: ${res.reason}`);
       }
-      tried.push(`${v.id}: ${res.reason}`);
     }
 
     if (!chosen) {
