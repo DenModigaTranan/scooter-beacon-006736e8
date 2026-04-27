@@ -953,17 +953,7 @@ function ConnectionLogPanel({
     };
   }, []);
 
-  const meta: Record<LogKind, { label: string; cls: string; dot: string }> = {
-    "attempt-start": { label: "TRY",      cls: "text-primary-glow",      dot: "bg-primary-glow" },
-    "attempt-ok":    { label: "OK",       cls: "text-primary-glow",      dot: "bg-primary-glow" },
-    "timeout":       { label: "TIMEOUT",  cls: "text-warning",           dot: "bg-warning" },
-    "attempt-fail":  { label: "FAIL",     cls: "text-destructive",       dot: "bg-destructive" },
-    "backoff":       { label: "BACKOFF",  cls: "text-warning/80",        dot: "bg-warning/80" },
-    "cancel":        { label: "CANCEL",   cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
-    "disconnect":    { label: "DISC",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
-    "info":          { label: "INFO",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
-    "summary":       { label: "SUMMARY",  cls: "text-foreground",        dot: "bg-foreground/70" },
-  };
+  const meta = LOG_KIND_META;
 
   return (
     <section className="panel overflow-hidden">
