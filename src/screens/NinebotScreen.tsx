@@ -198,7 +198,7 @@ function statusBadge(status: NinebotSessionStatus, hasNinebot: boolean):
 }
 
 export default function NinebotScreen() {
-  const { telemetry, status, detail, hasNinebot } = useNinebotLiveTelemetry();
+  const { telemetry, status, detail, hasNinebot, model, sendCommand } = useNinebotLiveTelemetry();
   const badge = useMemo(() => statusBadge(status, hasNinebot), [status, hasNinebot]);
 
   return (
