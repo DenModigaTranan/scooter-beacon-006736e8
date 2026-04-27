@@ -187,6 +187,14 @@ export function InfoScreen() {
         <Row label="Total mileage" value={info ? `${info.totalMileageKm.toFixed(1)} km` : undefined} />
       </div>
 
+      {/* Extended device identifiers (read on demand) */}
+      <ExtendedInfoPanel
+        ext={extendedInfo}
+        loading={loadingExtras}
+        error={extrasError}
+        onRefresh={onRefreshExtras}
+      />
+
       {/* Change serial */}
       <div className="panel p-4">
         <div className="flex items-center gap-2 mb-3">
