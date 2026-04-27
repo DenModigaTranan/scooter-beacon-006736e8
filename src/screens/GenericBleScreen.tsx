@@ -836,7 +836,7 @@ function ConnectionLogPanel({
    * popping it back open until another fresh failure shows up.
    */
   const NOTEWORTHY: ReadonlySet<LogKind> = useMemo(
-    () => new Set<LogKind>(["attempt-fail", "timeout", "cancel"]),
+    () => new Set<LogKind>(["attempt-fail", "timeout", "cancel", "summary"]),
     [],
   );
   const lastAutoOpenIdRef = useRef<number>(0);
