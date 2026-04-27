@@ -453,6 +453,10 @@ export class ScooterService {
     opts?: { onLog?: (line: string) => void }
   ): AsyncGenerator<{ pct: number; bytes: number; total: number; status: string }> {
     const log = opts?.onLog ?? (() => {});
+    // Hard-fail before touching firmware if the device hasn't passed the
+    // GATT handshake — avoids bricking a non-M365 peripheral that happened
+    // to advertise a similar name.
+    this.requireHandshake();
     const addr = target === "DRV" ? M365.ADDR.ESC : target === "BMS" ? M365.ADDR.BMS : M365.ADDR.BLE;
     const total = firmware.length;
 
