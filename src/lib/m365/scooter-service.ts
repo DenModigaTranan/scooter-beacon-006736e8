@@ -63,6 +63,29 @@ export interface VerifyResult {
   readError?: string;
 }
 
+/**
+ * Outcome of the BLE GATT handshake. The handshake is required before any
+ * flash operation: it confirms the connected peripheral actually exposes the
+ * Xiaomi M365 service + characteristic with the right properties.
+ */
+export interface HandshakeResult {
+  ok: boolean;
+  /** Lowercase UUIDs of services found on the device. */
+  servicesFound: string[];
+  /** UUIDs we expected but did not find. */
+  missingServices: string[];
+  /** UUIDs we expected but did not find under the M365 service. */
+  missingChars: string[];
+  /** Properties we expected on the matched characteristic but did not see. */
+  missingProps: string[];
+  /** Best-effort response to a no-op probe read against the ESC. */
+  probeResponded: boolean;
+  /** Human-readable failure reason (or "ok"). */
+  reason: string;
+  /** ISO timestamp of when the handshake completed. */
+  at: string;
+}
+
 const isNative = () => Capacitor.isNativePlatform();
 
 export class ScooterService {
