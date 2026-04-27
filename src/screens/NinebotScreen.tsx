@@ -60,15 +60,33 @@ function useNinebotLiveTelemetry(): {
   detail: string | null;
   /** True when we believe a Ninebot is on the other end of the link. */
   hasNinebot: boolean;
+  /** Resolved model for the connected device, if recognised. */
+  model: NinebotModel | null;
+  /**
+   * Stable callback that proxies to the active session. Throws if no
+   * session is live; the panel uses the `status === "polling"` flag to
+   * gate the buttons so this never fires speculatively.
+   */
+  sendCommand: (cmd: NinebotCommand) => Promise<void>;
 } {
   const [telemetry, setTelemetry] = useState<NinebotTelemetry>({});
   const [status, setStatus] = useState<NinebotSessionStatus>("idle");
   const [detail, setDetail] = useState<string | null>(null);
   const [hasNinebot, setHasNinebot] = useState(false);
+  const [model, setModel] = useState<NinebotModel | null>(null);
   // Tracks the deviceId we've already started a session for, so the poll
   // loop doesn't churn through start()/stop() on every tick.
   const activeIdRef = useRef<string | null>(null);
   const sessionRef = useRef<NinebotSession | null>(null);
+
+  // Stable identity so the panel can put it in dep arrays without
+  // re-rendering on every tick. The ref keeps the callback pointed at the
+  // current session even after start/stop cycles.
+  const sendCommand = useCallback(async (cmd: NinebotCommand) => {
+    const s = sessionRef.current;
+    if (!s) throw new Error("No Ninebot session");
+    await s.sendCommand(cmd);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +106,7 @@ function useNinebotLiveTelemetry(): {
           setStatus("idle");
           setDetail(null);
           setTelemetry({});
+          setModel(null);
         }
         return;
       }
@@ -100,7 +119,15 @@ function useNinebotLiveTelemetry(): {
       );
       if (cancelled) return;
       setHasNinebot(hasService);
-      if (!hasService) return;
+      if (!hasService) { setModel(null); return; }
+      // Resolve the connected peripheral's model from the registry so the
+      // controls panel can hide buttons the device doesn't support. We
+      // re-derive from the live discovery result rather than caching
+      // because GenericBleScreen's connection-state cache is private.
+      const match = matchNinebotModel({
+        serviceUuids: services.map((s) => s.uuid),
+      });
+      setModel(match.via === "fallback" ? null : match.model);
       // New Ninebot session — tear down any prior one (defensive — the
       // teardown above should've already fired) and spin a fresh one.
       await teardown();
@@ -141,7 +168,7 @@ function useNinebotLiveTelemetry(): {
     };
   }, []);
 
-  return { telemetry, status, detail, hasNinebot };
+  return { telemetry, status, detail, hasNinebot, model, sendCommand };
 }
 
 /**
