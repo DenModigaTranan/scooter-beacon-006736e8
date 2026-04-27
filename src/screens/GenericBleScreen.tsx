@@ -524,6 +524,9 @@ export function GenericBleScreen() {
         onRetry={() => connectedDevice && connect(connectedDevice)}
       />
 
+      {/* One-line failure summary — only shown when the latest run ended badly */}
+      <FailureSummaryChip data={lastFailure} now={now} />
+
       {/* Connection log — small expandable panel of timestamped events */}
       <ConnectionLogPanel entries={log} onClear={clearLog} now={now} />
       {/* Discovered services panel — only when connected */}
