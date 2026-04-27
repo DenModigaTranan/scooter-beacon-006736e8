@@ -312,6 +312,38 @@ export class NinebotSession {
   }
 }
 
+/**
+ * Translate a high-level command into the WRITE_REG frame the ESC
+ * expects. Pure — no I/O — so it's trivially unit-testable and the same
+ * encoder runs in the mock peripheral and the production transport.
+ */
+function encodeCommand(cmd: NinebotCommand): Uint8Array {
+  switch (cmd.kind) {
+    case "lock":
+      return buildWriteRegister(NB.NODE.ESC, NB.REG.LOCK, [0x01]);
+    case "unlock":
+      return buildWriteRegister(NB.NODE.ESC, NB.REG.LOCK, [0x00]);
+    case "lights":
+      return buildWriteRegister(NB.NODE.ESC, NB.REG.LIGHTS, [cmd.on ? 0x01 : 0x00]);
+    case "beep":
+      return buildWriteRegister(NB.NODE.ESC, NB.REG.BEEP, [0x01]);
+  }
+}
+
+/**
+ * Local-state preview of the command's effect, applied before the device
+ * echoes back. Returns `null` for stateless commands (beep) and for
+ * lights — which we *don't* model in `NinebotTelemetry`, so optimism
+ * there has nothing to update.
+ */
+function optimisticTelemetry(cmd: NinebotCommand): Partial<NinebotTelemetry> | null {
+  switch (cmd.kind) {
+    case "lock":   return { locked: true };
+    case "unlock": return { locked: false };
+    default:       return null;
+  }
+}
+
 /** WebCrypto when available, Math.random fallback otherwise. */
 function randomBytes(n: number): Uint8Array {
   const out = new Uint8Array(n);
