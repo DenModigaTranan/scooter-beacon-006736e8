@@ -26,13 +26,16 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   genericBle, formatBytes, getMockHint, charKey,
   type GenericDevice, type GenericServiceInfo, type GenericCharInfo,
 } from "@/lib/generic-ble";
 import { detectNinebot } from "@/lib/ninebot-detect";
-import { matchNinebotModel } from "@/lib/ninebot-models";
+import { matchNinebotModel, NINEBOT_MODELS, getNinebotModelById } from "@/lib/ninebot-models";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
 type ConnState = "disconnected" | "connecting" | "connected" | "error";
@@ -237,6 +240,22 @@ export function GenericBleScreen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [devices, setDevices] = useState<GenericDevice[]>([]);
   const [filter, setFilter] = useState("");
+  // User-selected target model. "auto" means "trust whatever the registry's
+  // detector resolves from each advertisement"; any other value pins the
+  // expected model so the UI can warn (and gate the Connect button) when
+  // the device doesn't match. Persisted in localStorage so a debugging
+  // session survives reloads — the value is just a string id from the
+  // models registry, safe to round-trip.
+  const MODEL_PREF_KEY = "ble.targetModelId";
+  const [targetModelId, setTargetModelId] = useState<string>(() => {
+    if (typeof window === "undefined") return "auto";
+    return window.localStorage.getItem(MODEL_PREF_KEY) || "auto";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(MODEL_PREF_KEY, targetModelId);
+  }, [targetModelId]);
+  const targetModel = targetModelId === "auto" ? null : getNinebotModelById(targetModelId);
 
   const [connState, setConnState] = useState<ConnState>("disconnected");
   const [connError, setConnError] = useState<string | null>(null);
@@ -844,6 +863,38 @@ export function GenericBleScreen() {
           </div>
         </div>
 
+        {/* Target model selector. Pinning a specific model gates Connect on
+            each row to prevent accidentally connecting to the wrong device
+            (e.g. selecting a Max G30 in a fleet that also has F-Series).
+            "Auto-detect" leaves things permissive — the row chip still
+            shows whatever the registry resolved. Models are grouped only
+            implicitly (display order in the registry) to keep the markup
+            simple; the registry is small enough today that a single flat
+            list is more scannable than a nested grouping. */}
+        <div className="mb-2">
+          <label
+            htmlFor="ble-target-model"
+            className="mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground mb-1 block"
+          >
+            Target model
+          </label>
+          <Select value={targetModelId} onValueChange={setTargetModelId}>
+            <SelectTrigger id="ble-target-model" className="mono text-xs h-9">
+              <SelectValue placeholder="Auto-detect" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto" className="mono text-xs">
+                Auto-detect
+              </SelectItem>
+              {NINEBOT_MODELS.map((m) => (
+                <SelectItem key={m.id} value={m.id} className="mono text-xs">
+                  {m.displayName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* Filter input */}
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -903,6 +954,7 @@ export function GenericBleScreen() {
               disabled={connState === "connecting"}
               onConnect={() => connect(d)}
               onDisconnect={disconnect}
+              targetModelId={targetModelId}
             />
           ))}
         </div>
@@ -1844,7 +1896,7 @@ function ConnStatusBanner({
 }
 
 function DeviceRow({
-  device, isConnected, isConnecting, disabled, onConnect, onDisconnect,
+  device, isConnected, isConnecting, disabled, onConnect, onDisconnect, targetModelId,
 }: {
   device: GenericDevice;
   isConnected: boolean;
@@ -1852,6 +1904,12 @@ function DeviceRow({
   disabled: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
+  // "auto" or a model id from the registry. When pinned to a specific
+  // model, the row's Connect button is disabled (with an explanatory
+  // tooltip) for devices whose detected model doesn't match — preventing
+  // accidental connects when troubleshooting a specific scooter in a
+  // multi-device environment.
+  targetModelId: string;
 }) {
   const bars = rssiBars(device.rssi);
   // Cheap, pure heuristic — runs once per render. Used to surface a
@@ -1878,6 +1936,16 @@ function DeviceRow({
     ninebot?.confidence === "high" ? "text-primary-glow border-primary-glow/40"
     : ninebot?.confidence === "medium" ? "text-primary border-primary/40"
     : "text-muted-foreground border-border";
+
+  // Target-model gating. When the user has pinned a specific model in the
+  // toolbar, mark devices whose detected model doesn't match so Connect is
+  // disabled for them. We treat the fallback ("ninebot-unknown") as
+  // *non-matching* on purpose — pinning a model is an explicit assertion
+  // and we shouldn't connect when we can't even confidently identify the
+  // device family.
+  const isTargetPinned = targetModelId !== "auto";
+  const detectedModelId = ninebotModel?.via !== "fallback" ? ninebotModel?.model.id : null;
+  const targetMismatch = isTargetPinned && detectedModelId !== targetModelId;
   return (
     <motion.div
       initial={{ opacity: 0, x: -6 }}
@@ -1931,6 +1999,14 @@ function DeviceRow({
             {device.mock && (
               <span className="chip text-[8px] tracking-widest text-warning">MOCK</span>
             )}
+            {targetMismatch && (
+              <span
+                className="chip text-[8px] tracking-widest text-warning border border-warning/40"
+                title={`Doesn't match the pinned target model. Detected: ${ninebotModel?.model.displayName ?? "non-Ninebot device"}.`}
+              >
+                MISMATCH
+              </span>
+            )}
           </div>
           <div className="mono text-[10px] text-muted-foreground tracking-widest truncate">
             {device.deviceId.slice(0, 17).toUpperCase()} · {device.rssi} dBm
@@ -1979,18 +2055,20 @@ function DeviceRow({
         ) : (
           <Button
             onClick={onConnect}
-            disabled={disabled || isConnecting}
+            disabled={disabled || isConnecting || targetMismatch}
             aria-busy={isConnecting}
             title={
-              disabled && !isConnecting
-                ? "Another connect attempt is in progress"
-                : undefined
+              targetMismatch
+                ? `Target pinned to a different model — detected ${ninebotModel?.model.displayName ?? "non-Ninebot device"}. Switch the Target model dropdown to "Auto-detect" or this device's model to enable Connect.`
+                : disabled && !isConnecting
+                  ? "Another connect attempt is in progress"
+                  : undefined
             }
             size="sm"
             className={cn(
               "mono text-[10px] tracking-widest",
               "bg-gradient-mint text-primary-foreground shadow-mint hover:opacity-90",
-              disabled && !isConnecting && "opacity-50 cursor-not-allowed",
+              (disabled || targetMismatch) && !isConnecting && "opacity-50 cursor-not-allowed",
             )}
           >
             {isConnecting ? (
