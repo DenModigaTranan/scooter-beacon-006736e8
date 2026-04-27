@@ -311,6 +311,7 @@ export function GenericBleScreen() {
           attempt,
           deadlineAt: startedAt + PER_ATTEMPT_TIMEOUT_MS,
         });
+        attemptsTried++;
         pushLog(
           "attempt-start",
           `Attempt ${attempt}/${MAX_ATTEMPTS} started (timeout ${cap})`,
