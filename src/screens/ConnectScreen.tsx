@@ -46,7 +46,7 @@ export function ConnectScreen() {
             connectingId={state === "connecting" ? selected?.deviceId ?? null : null}
             state={state}
             activeDeviceId={selected?.deviceId ?? null}
-            handshakeOk={handshake?.ok ?? null ? !!handshake?.ok : undefined}
+            handshakeOk={handshake ? handshake.ok : undefined}
             errorMessage={errorMessage}
             onReconnect={(deviceId, name) =>
               connect({ deviceId, name, rssi: -127 })
