@@ -705,8 +705,16 @@ export function GenericBleScreen() {
         onRetry={() => connectedDevice && connect(connectedDevice)}
       />
 
-      {/* One-line failure summary — only shown when the latest run ended badly */}
-      <FailureSummaryChip data={lastFailure} now={now} />
+      {/* One-line failure summary — only shown when the latest run ended badly.
+          Retry is only meaningful once the orchestrator's own retry loop has
+          given up (connState !== "connecting"); while it's still cycling we
+          let the auto-retry run to avoid stomping on it. */}
+      <FailureSummaryChip
+        data={lastFailure}
+        now={now}
+        canRetry={!!connectedDevice && connState !== "connecting"}
+        onRetry={() => connectedDevice && connect(connectedDevice)}
+      />
 
       {/* Connection log — small expandable panel of timestamped events */}
       <ConnectionLogPanel entries={log} onClear={clearLog} now={now} />
