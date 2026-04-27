@@ -50,7 +50,7 @@ function Row({ label, value, copyable = true }: { label: string; value?: string;
 type Step = "confirm" | "writing" | "verifying" | "verified" | "mismatch";
 
 export function InfoScreen() {
-  const { info, writeSerialAndVerify, refreshInfo, selected } = useScooter();
+  const { info, writeSerialAndVerify, refreshInfo, refreshExtendedInfo, extendedInfo, selected } = useScooter();
   const [editingSerial, setEditingSerial] = useState(false);
   const [newSerial, setNewSerial] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
