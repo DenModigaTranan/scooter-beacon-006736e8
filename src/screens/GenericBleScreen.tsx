@@ -392,6 +392,7 @@ export function GenericBleScreen() {
             if (settled) return;
             attemptsSucceeded++;
             attemptDurationsMs.push(took);
+            setAttemptOutcome(attempt, "ok");
             finish(() => resolve());
             pushLog(
               "attempt-ok",
@@ -408,7 +409,10 @@ export function GenericBleScreen() {
             (e as Error & { tookMs?: number }).tookMs = took;
             // Same guard as the success branch: timeout/abort paths already
             // recorded the duration before forcing the reject.
-            if (!settled) attemptDurationsMs.push(took);
+            if (!settled) {
+              attemptDurationsMs.push(took);
+              setAttemptOutcome(attempt, "failed");
+            }
             finish(() => reject(e));
           },
         );
