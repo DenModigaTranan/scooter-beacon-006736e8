@@ -4,6 +4,7 @@ import { ConnectScreen } from "@/screens/ConnectScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { InfoScreen } from "@/screens/InfoScreen";
 import { FlashScreen } from "@/screens/FlashScreen";
+import { CatalogScreen } from "@/screens/CatalogScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { DisclaimerScreen, useDisclaimerAccepted } from "@/screens/DisclaimerScreen";
 import { ProfileSelectScreen } from "@/screens/ProfileSelectScreen";
@@ -15,6 +16,7 @@ import { getProfileMeta, useProfile } from "@/lib/profile";
 const titles: Record<TabKey, string> = {
   dashboard: "Dashboard",
   info: "Scooter Info",
+  catalog: "Firmware Catalog",
   flash: "Flash Firmware",
   settings: "Settings",
 };
@@ -45,6 +47,7 @@ const Index = () => {
         <ProfileBanner />
         {tab === "dashboard" && <DashboardScreen />}
         {tab === "info" && <InfoScreen />}
+        {tab === "catalog" && <CatalogScreen onPickToFlash={() => setTab("flash")} />}
         {tab === "flash" && <FlashScreen />}
         {tab === "settings" && <SettingsScreen />}
       </main>
