@@ -249,6 +249,7 @@ export function GenericBleScreen() {
 
         const timeoutId = setTimeout(() => {
           finish(() => reject(new Error(`timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`)));
+          pushLog("timeout", `Attempt ${attempt} timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`);
           // Best-effort cleanup so the next attempt starts clean.
           genericBle.disconnect().catch(() => {});
         }, PER_ATTEMPT_TIMEOUT_MS);
