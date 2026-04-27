@@ -955,6 +955,47 @@ function FailureSummaryChip({
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
   }, []);
 
+  // Optional confirm-before-retry guard. Persisted in localStorage so the
+  // user's troubleshooting preference survives reloads. When enabled, the
+  // first click on "Retry now" arms a transient "Confirm?" state for ~4s;
+  // a second click within that window actually fires onRetry. Auto-disarms
+  // on chip hide or after the timeout, so we never strand the button in a
+  // weird state across runs.
+  const RETRY_CONFIRM_KEY = "ble.retry.requireConfirm";
+  const [requireConfirm, setRequireConfirm] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(RETRY_CONFIRM_KEY) === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(RETRY_CONFIRM_KEY, requireConfirm ? "1" : "0");
+  }, [requireConfirm]);
+  const [retryArmed, setRetryArmed] = useState(false);
+  const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (armTimerRef.current) clearTimeout(armTimerRef.current);
+  }, []);
+  // Disarm whenever the chip hides (run cleared) so a stale "Confirm?" never
+  // greets the user on the next failure.
+  useEffect(() => {
+    if (!data) {
+      setRetryArmed(false);
+      if (armTimerRef.current) clearTimeout(armTimerRef.current);
+    }
+  }, [data]);
+
+  const handleRetryClick = () => {
+    if (!requireConfirm || retryArmed) {
+      setRetryArmed(false);
+      if (armTimerRef.current) clearTimeout(armTimerRef.current);
+      onRetry();
+      return;
+    }
+    setRetryArmed(true);
+    if (armTimerRef.current) clearTimeout(armTimerRef.current);
+    armTimerRef.current = setTimeout(() => setRetryArmed(false), 4000);
+  };
+
   if (!data) return null;
   const { entry, attempt, reason, totalLabel, ended, failures } = data;
   const ageSec = Math.max(0, Math.round((now - entry.at) / 1000));
