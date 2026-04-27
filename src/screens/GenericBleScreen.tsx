@@ -266,6 +266,7 @@ export function GenericBleScreen() {
           attempt,
           deadlineAt: Date.now() + PER_ATTEMPT_TIMEOUT_MS,
         });
+        pushLog("attempt-start", `Attempt ${attempt}/${MAX_ATTEMPTS} started`);
 
         genericBle.connect(d.deviceId, () => {
           // Peer-initiated disconnect AFTER we resolved → propagate to UI.
