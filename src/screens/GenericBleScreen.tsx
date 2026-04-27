@@ -942,6 +942,31 @@ function FailureSummaryChip({
   const tone = FAILURE_TONE[cls.tone];
   const Icon = cls.icon;
 
+  // Plain-text payload for the Copy button. Designed to drop straight into
+  // a Slack/JIRA bug report — short enough to skim, structured enough to
+  // grep. Includes attempt number, cleaned reason, total run duration, and
+  // an absolute timestamp so triage doesn't have to ask "when did this
+  // happen?".
+  const buildSummaryText = () => {
+    const lines: string[] = [];
+    lines.push(`[${cls.label}] ${reason}`);
+    if (attempt !== null) lines.push(`Attempt: ${attempt}/${MAX_ATTEMPTS}`);
+    lines.push(`Total: ${totalLabel ?? "in progress"}`);
+    lines.push(`When: ${new Date(entry.at).toISOString()}`);
+    return lines.join("\n");
+  };
+
+  const handleCopy = async () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    try {
+      await navigator.clipboard.writeText(buildSummaryText());
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+    copyTimerRef.current = setTimeout(() => setCopyState("idle"), 1500);
+  };
+
   return (
     <motion.section
       initial={{ opacity: 0, y: -4 }}
@@ -950,84 +975,119 @@ function FailureSummaryChip({
       role="status"
       aria-live="polite"
     >
-      <button
-        type="button"
-        onClick={() => expandable && setOpen((o) => !o)}
-        disabled={!expandable}
-        aria-expanded={expandable ? open : undefined}
-        className={cn(
-          "w-full p-2.5 flex items-start gap-2.5 text-left transition-colors",
-          expandable && "hover:bg-foreground/[0.03] cursor-pointer",
-          !expandable && "cursor-default",
-        )}
-      >
-        <div className={cn(
-          "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
-          tone.iconBg,
-        )}>
-          <Icon className={cn("w-3.5 h-3.5", tone.icon)} />
-        </div>
-        <div className="min-w-0 flex-1">
+      {/* Outer wrapper is a plain div so the Copy button can be a sibling
+          (nested <button> elements aren't valid HTML). The expand affordance
+          lives on the icon + content region instead, so the user can still
+          click anywhere on the chip body to open the drawer. */}
+      <div className="p-2.5 flex items-start gap-2.5">
+        <button
+          type="button"
+          onClick={() => expandable && setOpen((o) => !o)}
+          disabled={!expandable}
+          aria-expanded={expandable ? open : undefined}
+          aria-label={expandable ? (open ? "Collapse failure details" : "Expand failure details") : undefined}
+          className={cn(
+            "flex-1 min-w-0 flex items-start gap-2.5 text-left -m-1 p-1 rounded-md transition-colors",
+            expandable && "hover:bg-foreground/[0.03] cursor-pointer",
+            !expandable && "cursor-default",
+          )}
+        >
           <div className={cn(
-            "mono text-[10px] tracking-[0.22em] uppercase flex items-center gap-2 flex-wrap",
-            tone.header,
+            "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
+            tone.iconBg,
           )}>
-            <span>{cls.label}</span>
-            {attempt !== null && (
-              <span className="text-muted-foreground/80 normal-case tracking-normal">
-                attempt {attempt}/{MAX_ATTEMPTS}
-              </span>
-            )}
-            {totalLabel && (
-              <span className="text-muted-foreground/80 normal-case tracking-normal">
-                · total {totalLabel}
-              </span>
-            )}
-            {!ended && (
-              <span className="text-muted-foreground/80 normal-case tracking-normal">
-                · in progress
-              </span>
-            )}
-            {expandable && (
-              <span className="text-muted-foreground/80 normal-case tracking-normal">
-                · {failures.length} {failures.length === 1 ? "entry" : "entries"}
-              </span>
-            )}
-            <span className="text-muted-foreground/60 normal-case tracking-normal">· {ageLabel}</span>
+            <Icon className={cn("w-3.5 h-3.5", tone.icon)} />
           </div>
-          <div className="mono text-[11px] text-foreground/90 leading-snug break-words">
-            {reason}
-          </div>
-          {/* Plain-language "what to try next" hint, picked from the failure
-              category + whether the orchestrator is still retrying. Lives on
-              the same card so the user reads reason → fix in one glance. */}
-          {(() => {
-            const next = nextStepFor(cls.category, ended);
-            const NextIcon = next.icon;
-            return (
-              <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-muted-foreground leading-snug">
-                <NextIcon className={cn("w-3 h-3 mt-0.5 shrink-0", tone.icon)} aria-hidden />
-                <span>
-                  <span className={cn("mono text-[9px] tracking-widest uppercase mr-1", tone.header)}>
-                    Next
-                  </span>
-                  {next.text}
+          <div className="min-w-0 flex-1">
+            <div className={cn(
+              "mono text-[10px] tracking-[0.22em] uppercase flex items-center gap-2 flex-wrap",
+              tone.header,
+            )}>
+              <span>{cls.label}</span>
+              {attempt !== null && (
+                <span className="text-muted-foreground/80 normal-case tracking-normal">
+                  attempt {attempt}/{MAX_ATTEMPTS}
                 </span>
-              </div>
-            );
-          })()}
-        </div>
-        {expandable && (
-          <ChevronDown
+              )}
+              {totalLabel && (
+                <span className="text-muted-foreground/80 normal-case tracking-normal">
+                  · total {totalLabel}
+                </span>
+              )}
+              {!ended && (
+                <span className="text-muted-foreground/80 normal-case tracking-normal">
+                  · in progress
+                </span>
+              )}
+              {expandable && (
+                <span className="text-muted-foreground/80 normal-case tracking-normal">
+                  · {failures.length} {failures.length === 1 ? "entry" : "entries"}
+                </span>
+              )}
+              <span className="text-muted-foreground/60 normal-case tracking-normal">· {ageLabel}</span>
+            </div>
+            <div className="mono text-[11px] text-foreground/90 leading-snug break-words">
+              {reason}
+            </div>
+            {/* Plain-language "what to try next" hint, picked from the failure
+                category + whether the orchestrator is still retrying. Lives on
+                the same card so the user reads reason → fix in one glance. */}
+            {(() => {
+              const next = nextStepFor(cls.category, ended);
+              const NextIcon = next.icon;
+              return (
+                <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-muted-foreground leading-snug">
+                  <NextIcon className={cn("w-3 h-3 mt-0.5 shrink-0", tone.icon)} aria-hidden />
+                  <span>
+                    <span className={cn("mono text-[9px] tracking-widest uppercase mr-1", tone.header)}>
+                      Next
+                    </span>
+                    {next.text}
+                  </span>
+                </div>
+              );
+            })()}
+          </div>
+        </button>
+        {/* Right-side action column: Copy first (primary tool for bug
+            reports), chevron below if expandable. Stops click propagation
+            so tapping Copy never accidentally toggles the drawer. */}
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); void handleCopy(); }}
+            aria-live="polite"
+            title="Copy attempt, reason, and total duration"
             className={cn(
-              "w-4 h-4 mt-1 shrink-0 transition-transform",
-              tone.icon,
-              open && "rotate-180",
+              "mono text-[9px] tracking-widest uppercase inline-flex items-center gap-1 transition-colors px-1.5 py-1 rounded",
+              "hover:bg-foreground/[0.04]",
+              copyState === "copied"
+                ? "text-primary-glow"
+                : copyState === "error"
+                  ? "text-destructive"
+                  : tone.icon,
             )}
-            aria-hidden
-          />
-        )}
-      </button>
+          >
+            {copyState === "copied" ? (
+              <><ClipboardCheck className="w-3 h-3" /> Copied</>
+            ) : copyState === "error" ? (
+              <><Copy className="w-3 h-3" /> Failed</>
+            ) : (
+              <><Copy className="w-3 h-3" /> Copy</>
+            )}
+          </button>
+          {expandable && (
+            <ChevronDown
+              className={cn(
+                "w-4 h-4 transition-transform",
+                tone.icon,
+                open && "rotate-180",
+              )}
+              aria-hidden
+            />
+          )}
+        </div>
+      </div>
 
       <AnimatePresence initial={false}>
         {open && expandable && (
