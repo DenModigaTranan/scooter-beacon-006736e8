@@ -48,6 +48,12 @@ export function FlashScreen() {
   const [customFile, setCustomFile] = useState<{ name: string; bytes: Uint8Array } | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [riskAck, setRiskAck] = useState(false);
+  /**
+   * Extra acknowledgement required when the handshake resolved against a
+   * clone variant (non-strict M365 GATT layout). Reset whenever the
+   * handshake snapshot changes so the user must re-tick after a re-handshake.
+   */
+  const [cloneAck, setCloneAck] = useState(false);
   const [progress, setProgress] = useState(0);
   const [bytesWritten, setBytesWritten] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
