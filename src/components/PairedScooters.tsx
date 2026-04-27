@@ -135,7 +135,17 @@ export function PairedScooters({
 
       <ul className="space-y-2.5">
         {profiles.map((p) => {
-          const connecting = connectingId === p.deviceId;
+          const status = deriveRowStatus(p.deviceId, {
+            state, activeDeviceId, connectingId, handshakeOk, errorMessage,
+          });
+          const meta = STATUS_META[status];
+          const StatusIcon = meta.Icon;
+          const isConnecting = status === "connecting";
+          const isActiveRow = status !== "idle";
+          // Only the active row is "live"; other rows stay tappable so the
+          // user can switch targets, but we disable while busy to avoid
+          // racing two connects.
+          const rowDisabled = busy && !isConnecting;
           const lastFlash = p.lastFlash;
           const flashUnsafe = lastFlash?.result === "aborted-unsafe";
           const flashOk = lastFlash?.result === "success";
@@ -147,30 +157,69 @@ export function PairedScooters({
               className={cn(
                 "panel hover:panel-glow transition-all overflow-hidden",
                 flashUnsafe && "border-destructive/40",
+                status === "connected" && "border-primary-glow/50 shadow-mint/20",
+                status === "handshake-failed" && "border-destructive/50",
+                status === "disconnected" && "border-warning/40",
+                status === "error" && "border-destructive/50",
               )}
+              aria-live={isActiveRow ? "polite" : undefined}
             >
               <div className="flex items-stretch">
                 <button
                   onClick={() => onReconnect(p.deviceId, p.advertisedName)}
-                  disabled={busy}
+                  disabled={rowDisabled}
                   className="flex-1 flex items-center gap-3 p-3.5 text-left disabled:opacity-60"
                 >
-                  <div className="w-10 h-10 rounded-md bg-secondary flex items-center justify-center shrink-0 relative">
-                    {connecting ? (
+                  <div className={cn(
+                    "w-10 h-10 rounded-md flex items-center justify-center shrink-0 relative transition-colors",
+                    status === "connected" && "bg-primary/15",
+                    status === "handshake-failed" && "bg-destructive/10",
+                    status === "disconnected" && "bg-warning/10",
+                    status === "error" && "bg-destructive/10",
+                    (status === "idle" || status === "connecting") && "bg-secondary",
+                  )}>
+                    {isConnecting ? (
                       <Loader2 className="w-5 h-5 text-primary-glow animate-spin" />
+                    ) : status === "connected" ? (
+                      <Wifi className="w-5 h-5 text-primary-glow" />
+                    ) : status === "handshake-failed" ? (
+                      <ShieldX className="w-5 h-5 text-destructive" />
+                    ) : status === "disconnected" ? (
+                      <Link2Off className="w-5 h-5 text-warning" />
+                    ) : status === "error" ? (
+                      <AlertTriangle className="w-5 h-5 text-destructive" />
                     ) : (
                       <Bluetooth className="w-5 h-5 text-primary-glow" />
                     )}
+                    {/* Live "pulse" dot for the connected row */}
+                    {status === "connected" && (
+                      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary-glow shadow-[0_0_6px_hsl(var(--primary-glow))] animate-pulse" />
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="mono text-sm truncate">{displayName(p)}</span>
+                      {/* Per-row live status pill — the heart of this feature. */}
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm border mono text-[9px] uppercase tracking-widest leading-none shrink-0",
+                          meta.className,
+                        )}
+                        role="status"
+                        aria-label={`Connection status: ${meta.label}`}
+                      >
+                        <StatusIcon className={cn(
+                          "w-2.5 h-2.5",
+                          status === "connecting" && "animate-spin",
+                        )} />
+                        {meta.label}
+                      </span>
                       {flashUnsafe && (
                         <span title="Last flash interrupted mid-write — reflash recommended">
                           <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />
                         </span>
                       )}
-                      {flashOk && (
+                      {flashOk && status !== "handshake-failed" && (
                         <span title="Last flash succeeded">
                           <CheckCircle2 className="w-3.5 h-3.5 text-primary-glow shrink-0" />
                         </span>
@@ -185,6 +234,12 @@ export function PairedScooters({
                       {p.lastInfo?.bmsVersion && <span>BMS {p.lastInfo.bmsVersion}</span>}
                       {p.lastInfo?.bleVersion && <span>BLE {p.lastInfo.bleVersion}</span>}
                     </div>
+                    {/* Inline failure reason — only for the active row, only when relevant */}
+                    {isActiveRow && (status === "handshake-failed" || status === "error") && errorMessage && (
+                      <div className="mt-1 text-[10px] mono text-destructive/90 leading-snug break-words">
+                        ! {errorMessage}
+                      </div>
+                    )}
                     <div className="mt-1 flex items-center gap-2 text-[10px] mono text-muted-foreground/80">
                       <span>seen {timeAgo(p.lastConnectedAt)}</span>
                       <span>·</span>
