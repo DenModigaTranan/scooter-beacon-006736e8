@@ -53,6 +53,34 @@ type ConnectPhase =
   | { kind: "connecting"; attempt: number; deadlineAt: number }
   | { kind: "backoff"; nextAttempt: number; resumeAt: number; lastError: string };
 
+/**
+ * One entry in the user-visible connection log. We keep the structure flat
+ * and tiny so the panel can render hundreds of events without churning.
+ *
+ * `kind` drives the row icon + color; `at` is captured at push time so the
+ * timestamp reflects when the event actually happened, not when React
+ * eventually re-rendered.
+ */
+type LogKind =
+  | "attempt-start"
+  | "attempt-ok"
+  | "timeout"
+  | "attempt-fail"
+  | "backoff"
+  | "cancel"
+  | "disconnect"
+  | "info";
+
+interface LogEntry {
+  id: number;
+  at: number;
+  kind: LogKind;
+  message: string;
+}
+
+/** Cap log size — old entries get evicted FIFO so memory stays bounded. */
+const LOG_MAX_ENTRIES = 100;
+
 function rssiBars(rssi: number): number {
   if (rssi >= -55) return 4;
   if (rssi >= -65) return 3;
