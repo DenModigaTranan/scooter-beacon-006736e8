@@ -971,6 +971,10 @@ function FailureSummaryChip({
   // wait). Surfaced inline next to the countdown so users can stop the
   // auto-retry loop without scrolling back up to the status banner.
   onCancelRetry: () => void;
+  // Human-readable phase + attempt summary (e.g. "phase=backoff before
+  // attempt 2/3, connState=connecting"). Surfaced in the Retry button's
+  // tooltip so the user can sanity-check timing context before clicking.
+  retryContext: string;
 }) {
   // Click-to-expand drawer state. Auto-collapses when the chip is hidden
   // (data === null) so a fresh successful run doesn't reopen with stale rows
