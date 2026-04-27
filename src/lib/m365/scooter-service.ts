@@ -212,20 +212,30 @@ export class ScooterService {
       return;
     }
     await BleClient.connect(deviceId, onDisconnect);
-    await BleClient.startNotifications(deviceId, M365.SERVICE, M365.CHAR_TX, (data) => {
-      this.feedRx(new Uint8Array(data.buffer));
-    });
+    // Notification subscription is deferred to handshake() because the
+    // resolver may decide to listen on a clone-variant TX characteristic.
     this.connectedId = deviceId;
   }
 
   async disconnect(): Promise<void> {
     if (!this.connectedId) return;
     this.lastHandshake = null;
+    // Reset the resolver back to strict M365 so the next connection starts
+    // from a clean baseline.
+    this.resolvedGatt = {
+      service: M365.SERVICE,
+      rx: M365.CHAR_RX,
+      tx: M365.CHAR_TX,
+      rxWriteWithoutResponse: false,
+    };
     if (!isNative()) {
       this.stopMockLoop();
       this.connectedId = null;
       return;
     }
+    try {
+      await BleClient.stopNotifications(this.connectedId, this.resolvedGatt.service, this.resolvedGatt.tx);
+    } catch { /* not subscribed yet — ignore */ }
     try { await BleClient.disconnect(this.connectedId); } catch { /* ignore */ }
     this.connectedId = null;
   }
