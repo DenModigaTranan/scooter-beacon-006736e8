@@ -464,6 +464,52 @@ export function GenericBleScreen() {
     );
   }, [devices, filter]);
 
+  /**
+   * Most recent failure recap, derived purely from the log so it stays in
+   * sync with whatever's already been pushed.
+   *
+   * Strategy: walk the log newest-first and stop at the first terminal marker
+   * for the current run. We only return a summary when the most recent run
+   * actually ended badly (`failed` or `cancelled`). A successful run is
+   * terminated by a `summary` of outcome "Connected", which suppresses the
+   * chip — the connection banner already shows that state.
+   */
+  const lastFailure = useMemo(() => {
+    if (log.length === 0) return null;
+    let lastFail: LogEntry | null = null;
+    let lastSummary: LogEntry | null = null;
+    for (const e of log) {
+      // Newest-first iteration; stop as soon as we hit a sequence boundary
+      // ("info" = "Connect requested" begins a new run).
+      if (e.kind === "info" && e.message.startsWith("Connect requested")) break;
+      if (!lastSummary && e.kind === "summary") lastSummary = e;
+      if (!lastFail && (e.kind === "attempt-fail" || e.kind === "timeout")) lastFail = e;
+    }
+    if (!lastFail) return null;
+    // If the run ended in success, don't surface the prior failure — the
+    // current state is "connected" and the chip would just be noise.
+    if (lastSummary?.message.startsWith("Connected")) return null;
+
+    // Parse "Attempt N …" out of the message to render a compact chip.
+    const m = lastFail.message.match(/^Attempt\s+(\d+)\b/i);
+    const attempt = m ? Number(m[1]) : null;
+    // Strip the "Attempt N failed (took Xs):" / "Attempt N hit timeout (…)"
+    // prefix so the reason reads cleanly on its own.
+    const reason = lastFail.message
+      .replace(/^Attempt\s+\d+\s+failed(?:\s+\([^)]*\))?:\s*/i, "")
+      .replace(/^Attempt\s+\d+\s+hit timeout\s*\(?[^)]*\)?\s*/i, "timed out")
+      .trim();
+    const isTimeout = lastFail.kind === "timeout";
+    const totalMs = lastSummary ? lastSummary.at - lastFail.at + 0 : null;
+    void totalMs;
+    // Prefer the sequence's own duration if a summary exists; otherwise
+    // approximate "since failure" relative to now.
+    const totalLabel = lastSummary
+      ? lastSummary.message.match(/after\s+([0-9.]+(?:ms|s))/i)?.[1] ?? null
+      : null;
+    return { entry: lastFail, attempt, reason, isTimeout, totalLabel, ended: !!lastSummary };
+  }, [log]);
+
   return (
     <div className="px-4 pt-4 pb-28 max-w-md mx-auto space-y-4 animate-fade-in">
       {/* Connection status banner */}
