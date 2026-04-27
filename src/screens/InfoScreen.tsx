@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { Copy, Check, ShieldAlert, PenLine, Loader2, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import {
+  Copy, Check, ShieldAlert, PenLine, Loader2, CheckCircle2, XCircle,
+  RefreshCw, Cpu, AlertTriangle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScooter } from "@/hooks/use-scooter";
@@ -14,7 +17,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { VerifyResult } from "@/lib/m365/scooter-service";
+import type { VerifyResult, ExtendedDeviceInfo } from "@/lib/m365/scooter-service";
+import { cn } from "@/lib/utils";
 
 function Row({ label, value, copyable = true }: { label: string; value?: string; copyable?: boolean }) {
   const [copied, setCopied] = useState(false);
