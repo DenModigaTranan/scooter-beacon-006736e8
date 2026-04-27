@@ -1,83 +1,76 @@
-## Add verified read/write of scooter identifiers
+## Add a scooter brand/profile selector with persistence
 
-The Info screen already exists and reads serial + DRV/BLE/BMS firmware over the FE95 BLE link, with a "type CONFIRM" dialog before any serial write. What's missing is the **verify** half of the flow: after the write we never confirm the scooter actually accepted it. We also expose only a subset of the identifiers the protocol can read.
+The user originally picked "Other / not sure yet" during onboarding, but the app currently hard-codes the Xiaomi M365 protocol everywhere. This change introduces an explicit **profile** setting the user can read and change at any time, persisted to local storage so it survives app restarts.
 
-This change closes both gaps without redoing existing UI.
+It does NOT yet wire a second protocol stack — that's a separate, much larger change. The selector is the foundation: every later feature can read this setting and branch on it.
 
-### Identifiers shown (read-only unless noted)
+### The four profiles offered
 
-| Field             | Source                  | Editable |
-|-------------------|-------------------------|----------|
-| Serial number     | ESC reg `0x10` (14 B)   | yes      |
-| DRV firmware      | ESC reg `0x1A` (u16)    | no       |
-| BLE firmware      | BLE reg `0x1A` (u16)    | no       |
-| BMS firmware      | BMS reg `0x1A` (u16)    | no       |
-| BMS serial        | BMS reg `0x10` (14 B)   | no (new) |
-| Hardware version  | ESC reg `0x19` (u16)    | no (new) |
-| Manufacture date  | BMS reg `0xB2` (u16)    | no (new) |
-| Total mileage     | ESC reg `0x29`          | no       |
+| Key             | Label                  | Notes                                              |
+|-----------------|------------------------|----------------------------------------------------|
+| `xiaomi-m365`   | Xiaomi M365 family     | Current behaviour — full protocol support.         |
+| `ninebot`       | Ninebot / Segway       | Selectable but flagged "Coming soon".              |
+| `generic-ble`   | Other / Generic BLE    | Selectable but flagged "Coming soon".              |
+| `unset`         | (none)                 | Initial state; forces the picker to appear.        |
 
-The three "(new)" rows just need extra `readRegister` calls in `readInfo()`.
+For now, picking `ninebot` or `generic-ble` saves the choice and shows a small "Protocol not yet implemented — using read-only mode" banner on connected screens. No app crash, no fake data.
 
-### Verify-after-write flow for the serial
-
-Today: `writeSerial(s)` → write bytes → `readInfo()` → trust whatever comes back.
-Now: a four-state state machine surfaced in the dialog itself.
+### Where it lives
 
 ```text
-┌────────────────────────────────────────────────────────┐
-│  CONFIRM SERIAL CHANGE                                 │
-│  Old:  16133/00012345                                  │
-│  New:  16133/00099999                                  │
-│  Type CONFIRM to proceed.        [_____________]       │
-│                                              [WRITE]   │
-└────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────┐
-│  WRITING…   ░░░░░▓▓▓▓▓░░░░░                            │
-│  Sending 14-byte payload to ESC reg 0x10               │
-└────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────┐
-│  VERIFYING…                                            │
-│  Re-reading ESC serial to confirm…                     │
-└────────────────────────────────────────────────────────┘
-                         │
-              ┌──────────┴──────────┐
-              ▼                     ▼
-   ✓ VERIFIED                ✗ MISMATCH
-   Read back matches         Read back: "16133/00012345"
-   "16133/00099999"          Expected:  "16133/00099999"
-   [DONE]                    [RETRY]   [CANCEL]
+┌── First launch (after disclaimer) ──────────────────┐
+│  CHOOSE YOUR SCOOTER                                │
+│                                                     │
+│  ◉  Xiaomi M365 family       [recommended]          │
+│  ○  Ninebot / Segway         [coming soon]          │
+│  ○  Other / Generic BLE      [coming soon]          │
+│                                                     │
+│  [           CONTINUE           ]                   │
+└─────────────────────────────────────────────────────┘
 ```
 
-Verify rules:
-- After write, wait 250 ms, call `readInfo()`, compare `info.serial` to the requested string (ignoring trailing spaces).
-- On mismatch: stay in the dialog, show old vs read-back vs expected, allow Retry (re-runs write+verify, max 3 attempts) or Cancel (closes dialog, original serial untouched in UI state).
-- On read failure / timeout: same UI as mismatch but labelled "READ FAILED".
-- Success: toast "Serial verified", close dialog, refresh Info panel from the verified read.
+After that, the same selector is reachable any time from **Settings → Profile**:
 
-### Files I'll change
+```text
+┌── Settings ──────────────────┐
+│  PROFILE                     │
+│  Xiaomi M365 family    [▾]   │  ← tap to change
+│                              │
+│  CONNECTED DEVICE …          │
+│  FIRMWARE CATALOG URL …      │
+│  …                           │
+└──────────────────────────────┘
+```
 
-- `src/lib/m365/protocol.ts`
-  - Add `decodeBmsDate(word)` helper (5/4/7-bit packed Y/M/D, community-documented).
-  - Re-export the new register addresses already used.
-- `src/lib/m365/scooter-service.ts`
-  - Extend `ScooterInfo` with `bmsSerial`, `hwVersion`, `manufactureDate` (all optional strings).
-  - In `readInfo()` add the three extra reads + parsing branches in the `onFrame` collector.
-  - Replace `writeSerial(s)` with `writeSerialAndVerify(s) → { ok, written, readBack, attempt }` that writes, waits, re-reads, and returns the comparison. Mock path simulates a successful write.
-- `src/store/scooter-store.ts`
-  - No schema change; just consumes the wider `ScooterInfo` shape.
-- `src/hooks/use-scooter.ts`
-  - Replace `writeSerial` with `writeSerialAndVerify` returning the result object so the UI can drive its state machine.
-- `src/screens/InfoScreen.tsx`
-  - Add new identifier rows.
-  - Convert the existing `AlertDialog` into a multi-step dialog: `confirm → writing → verifying → verified | mismatch`, with Retry/Cancel on mismatch and a small inline log showing exactly what was sent and read back.
-  - Disable the WRITE button while a verify pass is in flight.
+The header pill also gets a tiny profile chip so the active profile is visible everywhere:
+
+```text
+SCOOTER INFO          [M365 ●CONNECTED]
+```
+
+### Files
+
+New:
+- `src/lib/profile.ts` — type `ScooterProfile`, the profile catalog (label, description, status), `getProfile()` / `setProfile()` localStorage helpers under key `scootflash:profile`, and a tiny `useProfile()` hook that subscribes to changes via a custom `storage` event so all screens stay in sync without needing a global store.
+- `src/screens/ProfileSelectScreen.tsx` — the full-page picker shown when no profile is saved yet (radio cards, Continue button, neon-garage styling consistent with `DisclaimerScreen`).
+- `src/components/ProfilePicker.tsx` — small inline picker (panel + select) used inside Settings.
+
+Changed:
+- `src/pages/Index.tsx` — gate after the disclaimer: if `profile === null`, render `ProfileSelectScreen`; otherwise proceed exactly as today.
+- `src/screens/SettingsScreen.tsx` — add a "Profile" panel at the top using `ProfilePicker`.
+- `src/components/AppShell.tsx` — `HeaderBar` accepts an optional `profileLabel` slot rendered as a small chip next to the status badge.
+- `src/screens/InfoScreen.tsx`, `src/screens/DashboardScreen.tsx`, `src/screens/FlashScreen.tsx` — when the active profile is `ninebot` or `generic-ble`, show a single "Read-only — protocol not yet implemented" banner at the top. Existing M365 logic still runs underneath unchanged (so the mock data still drives the UI), but the banner sets clear expectations.
+
+### Storage shape
+
+```ts
+// localStorage key:  scootflash:profile
+// value:             "xiaomi-m365" | "ninebot" | "generic-ble"   (or absent)
+```
+
+Single string, mirroring the existing `scootflash:catalog-url` convention. No new dependencies.
 
 ### Out of scope
 
-- Writing anything other than the serial (firmware versions are read-only by design).
-- Persisting an audit trail of serial changes — happy to add later if useful.
+- Implementing the Ninebot or Generic BLE protocols (each is a multi-day effort and was deferred earlier).
+- Migrating per-profile firmware catalogs — the catalog URL stays global for now.
