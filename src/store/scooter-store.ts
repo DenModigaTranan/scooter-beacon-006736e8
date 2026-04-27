@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DiscoveredDevice, ScooterInfo, Telemetry, HandshakeResult } from "@/lib/m365/scooter-service";
+import type { DiscoveredDevice, ScooterInfo, Telemetry, HandshakeResult, ExtendedDeviceInfo } from "@/lib/m365/scooter-service";
 import type { FirmwareEntry } from "@/lib/m365/catalog";
 
 export type ConnectionState = "idle" | "scanning" | "connecting" | "connected" | "disconnected" | "error";
