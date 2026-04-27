@@ -705,8 +705,16 @@ export function GenericBleScreen() {
         onRetry={() => connectedDevice && connect(connectedDevice)}
       />
 
-      {/* One-line failure summary — only shown when the latest run ended badly */}
-      <FailureSummaryChip data={lastFailure} now={now} />
+      {/* One-line failure summary — only shown when the latest run ended badly.
+          Retry is only meaningful once the orchestrator's own retry loop has
+          given up (connState !== "connecting"); while it's still cycling we
+          let the auto-retry run to avoid stomping on it. */}
+      <FailureSummaryChip
+        data={lastFailure}
+        now={now}
+        canRetry={!!connectedDevice && connState !== "connecting"}
+        onRetry={() => connectedDevice && connect(connectedDevice)}
+      />
 
       {/* Connection log — small expandable panel of timestamped events */}
       <ConnectionLogPanel entries={log} onClear={clearLog} now={now} />
@@ -893,7 +901,7 @@ export function GenericBleScreen() {
  * the total duration of that run. Auto-hides on success.
  */
 function FailureSummaryChip({
-  data, now,
+  data, now, canRetry, onRetry,
 }: {
   data: {
     entry: LogEntry;
@@ -905,6 +913,11 @@ function FailureSummaryChip({
     failures: LogEntry[];
   } | null;
   now: number;
+  // Whether a fresh connect can be kicked off right now. False while a
+  // connect sequence is mid-flight so the chip's Retry button doesn't race
+  // the orchestrator's own retry loop.
+  canRetry: boolean;
+  onRetry: () => void;
 }) {
   // Click-to-expand drawer state. Auto-collapses when the chip is hidden
   // (data === null) so a fresh successful run doesn't reopen with stale rows
@@ -1029,24 +1042,6 @@ function FailureSummaryChip({
             <div className="mono text-[11px] text-foreground/90 leading-snug break-words">
               {reason}
             </div>
-            {/* Plain-language "what to try next" hint, picked from the failure
-                category + whether the orchestrator is still retrying. Lives on
-                the same card so the user reads reason → fix in one glance. */}
-            {(() => {
-              const next = nextStepFor(cls.category, ended);
-              const NextIcon = next.icon;
-              return (
-                <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-muted-foreground leading-snug">
-                  <NextIcon className={cn("w-3 h-3 mt-0.5 shrink-0", tone.icon)} aria-hidden />
-                  <span>
-                    <span className={cn("mono text-[9px] tracking-widest uppercase mr-1", tone.header)}>
-                      Next
-                    </span>
-                    {next.text}
-                  </span>
-                </div>
-              );
-            })()}
           </div>
         </button>
         {/* Right-side action column: Copy first (primary tool for bug
@@ -1088,6 +1083,45 @@ function FailureSummaryChip({
           )}
         </div>
       </div>
+
+      {/* Next-step suggestion + Retry. Lives outside the expand-toggle button
+          so the Retry button can be a real <button> sibling (nested buttons
+          are invalid HTML). The whole row only renders when there's
+          something to suggest, which is always-true once `data` exists. */}
+      {(() => {
+        const next = nextStepFor(cls.category, ended);
+        const NextIcon = next.icon;
+        // Retry only makes sense once the orchestrator has stopped its own
+        // loop; while it's still retrying, the chip would just race itself.
+        const showRetry = canRetry && ended;
+        return (
+          <div className={cn("px-2.5 pb-2.5 -mt-1 flex items-start gap-2", tone.bg)}>
+            <div className="flex-1 min-w-0 flex items-start gap-1.5 text-[11px] text-muted-foreground leading-snug">
+              <NextIcon className={cn("w-3 h-3 mt-0.5 shrink-0", tone.icon)} aria-hidden />
+              <span>
+                <span className={cn("mono text-[9px] tracking-widest uppercase mr-1", tone.header)}>
+                  Next
+                </span>
+                {next.text}
+              </span>
+            </div>
+            {showRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                title="Start a fresh connect sequence"
+                className={cn(
+                  "mono text-[9px] tracking-widest uppercase inline-flex items-center gap-1 px-2 py-1 rounded transition-colors shrink-0",
+                  "border border-current/30 hover:bg-foreground/[0.06]",
+                  tone.icon,
+                )}
+              >
+                <RefreshCw className="w-3 h-3" /> Retry now
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       <AnimatePresence initial={false}>
         {open && expandable && (
