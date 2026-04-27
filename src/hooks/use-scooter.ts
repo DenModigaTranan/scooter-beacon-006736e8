@@ -125,6 +125,7 @@ export function useScooter() {
     writeSerialAndVerify,
     refreshInfo,
     rerunHandshake,
+    refreshExtendedInfo,
     isNative: Capacitor.isNativePlatform(),
   };
 }
