@@ -369,8 +369,6 @@ export class ScooterService {
         break;
       }
       tried.push(`${v.id}: ${res.reason}`);
-      continue;
-      if (res.ok) { chosen = { variant: v, rxProp: res.rxProp }; break; }
     }
 
     if (!chosen) {
