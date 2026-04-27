@@ -43,6 +43,7 @@ export function useScooter() {
         store.setInfo(null);
         store.setTelemetry(null);
         store.setHandshake(null);
+        store.setExtendedInfo(null);
       });
       await haptic(ImpactStyle.Medium);
       store.setState("connected");
