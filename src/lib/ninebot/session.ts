@@ -31,11 +31,27 @@ import {
   buildAuthPreComm,
   buildAuthSetPwd,
   buildReadRegister,
+  buildWriteRegister,
   consumeFrames,
   decodeRegisterReply,
   type NinebotFrame,
   type NinebotTelemetry,
 } from "./protocol";
+
+/**
+ * Catalog of high-level commands the UI can send. Lifted to a tagged
+ * union (rather than five `lock()` / `unlock()` methods) so the session's
+ * public surface stays small and adding a new command is a one-spot edit
+ * — extend the union, extend the switch in `sendCommand`, done. The UI
+ * iterates this set to render its buttons; the same value the button
+ * fires is what reaches the wire encoder, so there's no lossy mapping
+ * step between intent and bytes.
+ */
+export type NinebotCommand =
+  | { kind: "lock" }
+  | { kind: "unlock" }
+  | { kind: "lights"; on: boolean }
+  | { kind: "beep" };
 
 /**
  * Session lifecycle status. Used by the UI to switch between "connecting",
