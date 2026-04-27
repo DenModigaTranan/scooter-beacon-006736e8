@@ -43,6 +43,7 @@ export const useScooterStore = create<ScooterStore>((set) => ({
   flashLog: [],
   pendingFlash: null,
   handshake: null,
+  extendedInfo: null,
 
   setState: (s) => set({ state: s }),
   addDevice: (d) =>
