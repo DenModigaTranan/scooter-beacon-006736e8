@@ -354,6 +354,10 @@ export function GenericBleScreen() {
             const took = elapsed();
             clearTimeout(timeoutId);
             ac.signal.removeEventListener("abort", onAbort);
+            // If we already settled (timeout / abort), the attempt has already
+            // been counted and its duration recorded — don't double-count even
+            // though the underlying plugin call eventually resolved.
+            if (settled) return;
             attemptsSucceeded++;
             attemptDurationsMs.push(took);
             finish(() => resolve());
@@ -370,7 +374,9 @@ export function GenericBleScreen() {
             // Annotate the rejection with timing so the outer loop can render
             // a uniform "took Xs" tail in the FAIL log entry.
             (e as Error & { tookMs?: number }).tookMs = took;
-            attemptDurationsMs.push(took);
+            // Same guard as the success branch: timeout/abort paths already
+            // recorded the duration before forcing the reject.
+            if (!settled) attemptDurationsMs.push(took);
             finish(() => reject(e));
           },
         );
