@@ -44,15 +44,30 @@ export function TabBar({ active, onChange }: { active: TabKey; onChange: (k: Tab
   );
 }
 
-export function HeaderBar({ title, right }: { title: string; right?: React.ReactNode }) {
+export function HeaderBar({
+  title,
+  right,
+  profileLabel,
+}: {
+  title: string;
+  right?: React.ReactNode;
+  profileLabel?: string;
+}) {
   return (
     <header className="sticky top-0 z-20 backdrop-blur-xl bg-background/70 border-b border-border/40">
       <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Bluetooth className="w-4 h-4 text-primary-glow" />
-          <h1 className="mono text-sm tracking-[0.2em] uppercase text-foreground">{title}</h1>
+        <div className="flex items-center gap-2 min-w-0">
+          <Bluetooth className="w-4 h-4 text-primary-glow shrink-0" />
+          <h1 className="mono text-sm tracking-[0.2em] uppercase text-foreground truncate">{title}</h1>
         </div>
-        {right}
+        <div className="flex items-center gap-2 shrink-0">
+          {profileLabel && (
+            <span className="chip text-[9px] tracking-[0.18em] uppercase text-primary-glow">
+              {profileLabel}
+            </span>
+          )}
+          {right}
+        </div>
       </div>
     </header>
   );

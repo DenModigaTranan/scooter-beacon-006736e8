@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScooter } from "@/hooks/use-scooter";
 import { getCatalogUrl, setCatalogUrl } from "@/lib/m365/catalog";
+import { ProfilePicker } from "@/components/ProfilePicker";
 import { Share } from "@capacitor/share";
 import { Capacitor } from "@capacitor/core";
 import { toast } from "sonner";
@@ -34,6 +35,8 @@ export function SettingsScreen() {
 
   return (
     <div className="px-4 pt-4 pb-28 max-w-md mx-auto space-y-4 animate-fade-in">
+      <ProfilePicker />
+
       <div className="panel p-4">
         <div className="mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground mb-2">Connected device</div>
         <div className="mono text-sm">{selected?.name ?? "—"}</div>
