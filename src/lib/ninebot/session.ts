@@ -31,11 +31,27 @@ import {
   buildAuthPreComm,
   buildAuthSetPwd,
   buildReadRegister,
+  buildWriteRegister,
   consumeFrames,
   decodeRegisterReply,
   type NinebotFrame,
   type NinebotTelemetry,
 } from "./protocol";
+
+/**
+ * Catalog of high-level commands the UI can send. Lifted to a tagged
+ * union (rather than five `lock()` / `unlock()` methods) so the session's
+ * public surface stays small and adding a new command is a one-spot edit
+ * — extend the union, extend the switch in `sendCommand`, done. The UI
+ * iterates this set to render its buttons; the same value the button
+ * fires is what reaches the wire encoder, so there's no lossy mapping
+ * step between intent and bytes.
+ */
+export type NinebotCommand =
+  | { kind: "lock" }
+  | { kind: "unlock" }
+  | { kind: "lights"; on: boolean }
+  | { kind: "beep" };
 
 /**
  * Session lifecycle status. Used by the UI to switch between "connecting",
@@ -150,7 +166,38 @@ export class NinebotSession {
     return { ...this.telemetry };
   }
 
-  /* ----------------------------------------------------------------- */
+  /**
+   * Send a high-level control command. Translates the tagged union into a
+   * single WRITE_REG frame and dispatches it on the RX characteristic.
+   *
+   * Pre-flight: rejects unless the session is `polling` (i.e. the auth
+   * handshake has completed). This is a defence-in-depth check — the UI
+   * already disables the buttons in non-polling states, but a stray call
+   * shouldn't get past us and confuse the device with a write before it
+   * has accepted our pairing.
+   *
+   * Errors from the underlying BLE write propagate so the UI can render a
+   * one-shot toast / inline error; the session's lifecycle status is
+   * deliberately *not* moved to "error" for a single failed command,
+   * since the link itself is still healthy.
+   */
+  async sendCommand(cmd: NinebotCommand): Promise<void> {
+    if (this.status !== "polling") {
+      throw new Error(`session not ready (status=${this.status})`);
+    }
+    const frame = encodeCommand(cmd);
+    // Optimistic local update for state-bearing commands so the tile
+    // flips immediately even before the device's echo round-trips. The
+    // next poll will reconcile if the device rejected the write.
+    const optimistic = optimisticTelemetry(cmd);
+    if (optimistic) {
+      this.telemetry = { ...this.telemetry, ...optimistic };
+      this.events.onTelemetry?.(this.telemetry);
+    }
+    await genericBle.writeCharacteristic(
+      NB_GATT.SERVICE, NB_GATT.CHAR_RX, frame, false,
+    );
+  }
 
   private setStatus(next: NinebotSessionStatus, detail?: string) {
     if (this.status === next) return;
@@ -262,6 +309,38 @@ export class NinebotSession {
       // don't surface transient write errors to the UI; they're noise on
       // an otherwise-healthy link.
     }
+  }
+}
+
+/**
+ * Translate a high-level command into the WRITE_REG frame the ESC
+ * expects. Pure — no I/O — so it's trivially unit-testable and the same
+ * encoder runs in the mock peripheral and the production transport.
+ */
+function encodeCommand(cmd: NinebotCommand): Uint8Array {
+  switch (cmd.kind) {
+    case "lock":
+      return buildWriteRegister(NB.NODE.ESC, NB.REG.LOCK, [0x01]);
+    case "unlock":
+      return buildWriteRegister(NB.NODE.ESC, NB.REG.LOCK, [0x00]);
+    case "lights":
+      return buildWriteRegister(NB.NODE.ESC, NB.REG.LIGHTS, [cmd.on ? 0x01 : 0x00]);
+    case "beep":
+      return buildWriteRegister(NB.NODE.ESC, NB.REG.BEEP, [0x01]);
+  }
+}
+
+/**
+ * Local-state preview of the command's effect, applied before the device
+ * echoes back. Returns `null` for stateless commands (beep) and for
+ * lights — which we *don't* model in `NinebotTelemetry`, so optimism
+ * there has nothing to update.
+ */
+function optimisticTelemetry(cmd: NinebotCommand): Partial<NinebotTelemetry> | null {
+  switch (cmd.kind) {
+    case "lock":   return { locked: true };
+    case "unlock": return { locked: false };
+    default:       return null;
   }
 }
 

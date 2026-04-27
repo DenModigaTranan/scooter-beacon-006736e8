@@ -133,9 +133,9 @@ function buildNinebotMockServices(): MockService[] {
   // ---- Wire helpers (kept local to avoid a circular import) ------------
   const HDR = [0x5a, 0xa5];
   const APP = 0x21, ESC = 0x20, BLE = 0x22;
-  const CMD_READ = 0x01, CMD_REPLY = 0x04;
+  const CMD_READ = 0x01, CMD_WRITE = 0x03, CMD_REPLY = 0x04;
   const CMD_PRE = 0x5b, CMD_SETPWD = 0x5c, CMD_AUTH_OK = 0x5d;
-  const REG = { BATTERY: 0xb1, SPEED: 0xb5, MODE: 0x75, ODO: 0x29, LOCK: 0x70 };
+  const REG = { BATTERY: 0xb1, SPEED: 0xb5, MODE: 0x75, ODO: 0x29, LOCK: 0x70, LIGHTS: 0x69, BEEP: 0x88 };
 
   const cks = (body: Uint8Array): number => {
     let s = 0; for (let i = 0; i < body.length; i++) s += body[i];
@@ -176,6 +176,7 @@ function buildNinebotMockServices(): MockService[] {
     mode: 1,                   // 0=drive, 1=eco, 2=sport
     odoHundredths: 1284_55,    // units: 0.01 km → starts at 1284.55 km
     locked: 1 as 0 | 1,
+    lights: 0 as 0 | 1,
     sessionKey: null as Uint8Array | null,
     lastPollAt: Date.now(),
   };
@@ -276,6 +277,39 @@ function buildNinebotMockServices(): MockService[] {
         }
         const reply = replyRead(r.dst, r.arg);
         if (reply) ctx.pushNotify(NB_TX, reply);
+        continue;
+      }
+      // Register writes — control commands (lock/unlock, lights, beep). Same
+      // auth gate as reads. Real firmware acks most writes by re-broadcasting
+      // the new register value on the next poll cycle, which is exactly what
+      // our READ handler does — so for the mock we just mutate state and let
+      // the next poll round-trip surface the change. Beep is a one-shot with
+      // no register echo; we treat it as a no-op state-wise.
+      if (r.cmd === CMD_WRITE) {
+        if (!state.authed) continue;
+        const v = r.payload[0] ?? 0;
+        switch (r.arg) {
+          case REG.LOCK:
+            state.locked = v ? 1 : 0;
+            break;
+          case REG.LIGHTS:
+            state.lights = v ? 1 : 0;
+            break;
+          case REG.BEEP:
+            // No persistent state; on real hardware the horn just sounds.
+            break;
+          default:
+            // Unknown register — silently ignore so adding a new write
+            // surface doesn't require updating the mock in lock-step.
+            break;
+        }
+        // Optimistic ack: echo the register's new value back so the session
+        // layer can resolve a pending write without waiting for the next
+        // poll tick. Skipped for BEEP since there's nothing to read.
+        if (r.arg === REG.LOCK || r.arg === REG.LIGHTS) {
+          const valueByte = r.arg === REG.LOCK ? state.locked : state.lights;
+          ctx.pushNotify(NB_TX, buildFrame(r.dst, APP, CMD_REPLY, r.arg, Uint8Array.from([valueByte])));
+        }
       }
     }
   };
