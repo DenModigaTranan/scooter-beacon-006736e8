@@ -680,6 +680,49 @@ export function GenericBleScreen() {
   }, [devices, filter]);
 
   /**
+   * The model whose capability list governs which raw GATT controls are
+   * exposed for the *connected* device. Resolution order:
+   *   1. The user's pinned `Target model`, if set — explicit always wins.
+   *   2. Otherwise the registry's auto-detection from the connected
+   *      device's advertisement (name / service UUIDs / mfr IDs).
+   *   3. `null` when nothing is connected — gating is a no-op until
+   *      there's a peripheral to gate against.
+   *
+   * We deliberately key the memo on the connected device's identity, not
+   * the full object, so transient field updates (e.g. an RSSI tick) don't
+   * cause the gating to recompute.
+   */
+  const activeModel = useMemo(() => {
+    if (!connectedDevice) return null;
+    if (targetModel) return targetModel;
+    const detection = detectNinebot({
+      name: connectedDevice.name,
+      serviceUuids: connectedDevice.serviceUuids,
+      manufacturerIds: connectedDevice.manufacturerIds,
+    });
+    if (!detection) return null;
+    const m = matchNinebotModel({
+      name: connectedDevice.name,
+      serviceUuids: connectedDevice.serviceUuids,
+      manufacturerIds: connectedDevice.manufacturerIds,
+    });
+    // Only return a concrete match — the fallback model has a deliberately
+    // conservative capability set, but we'd rather expose every raw GATT
+    // control than silently restrict the user when the registry didn't
+    // actually recognise the device.
+    return m.via === "fallback" ? null : m.model;
+  }, [connectedDevice, targetModel]);
+
+  // Capability flags for the active model. A `null` model means "no
+  // gating in effect" — we surface that to the row as `null`/`null` so it
+  // can render its full property-driven controls unchanged. Booleans mean
+  // "the model has at least one capability of this class".
+  const allowsRead = activeModel ? activeModel.capabilities.some((c) => c.startsWith("read.")) : null;
+  const allowsWrite = activeModel
+    ? activeModel.capabilities.some((c) => c.startsWith("write.") || c.startsWith("secure."))
+    : null;
+
+  /**
    * Most recent failure recap, derived purely from the log so it stays in
    * sync with whatever's already been pushed.
    *
