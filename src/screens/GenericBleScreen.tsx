@@ -379,6 +379,10 @@ export function GenericBleScreen() {
           } else {
             const took = elapsed();
             attemptDurationsMs.push(took);
+            // Mark the strip BEFORE finishing so the early-disconnect tile
+            // turns red even though the late plugin rejection arrives after
+            // we've already settled.
+            setAttemptOutcome(attempt, "failed");
             finish(() => reject(new Error(`disconnected before GATT ready (after ${formatMs(took)})`)));
           }
         }).then(
