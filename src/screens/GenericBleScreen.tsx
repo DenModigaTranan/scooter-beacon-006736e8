@@ -31,6 +31,7 @@ import {
   genericBle, formatBytes, getMockHint, charKey,
   type GenericDevice, type GenericServiceInfo, type GenericCharInfo,
 } from "@/lib/generic-ble";
+import { detectNinebot } from "@/lib/ninebot-detect";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
 type ConnState = "disconnected" | "connecting" | "connected" | "error";
@@ -1852,6 +1853,20 @@ function DeviceRow({
   onDisconnect: () => void;
 }) {
   const bars = rssiBars(device.rssi);
+  // Cheap, pure heuristic — runs once per render. Used to surface a
+  // "Ninebot" chip next to the device name when the advertisement matches
+  // the Segway-Ninebot signature (custom service UUID, name prefix, or
+  // company ID 0x0810). Confidence shapes the chip's tone so users can
+  // distinguish a service-UUID-confirmed match from a name-only guess.
+  const ninebot = detectNinebot({
+    name: device.name,
+    serviceUuids: device.serviceUuids,
+    manufacturerIds: device.manufacturerIds,
+  });
+  const ninebotTone =
+    ninebot?.confidence === "high" ? "text-primary-glow border-primary-glow/40"
+    : ninebot?.confidence === "medium" ? "text-primary border-primary/40"
+    : "text-muted-foreground border-border";
   return (
     <motion.div
       initial={{ opacity: 0, x: -6 }}
@@ -1875,8 +1890,19 @@ function DeviceRow({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="mono text-sm truncate">{device.name}</span>
+            {ninebot && (
+              <span
+                className={cn(
+                  "chip text-[8px] tracking-widest border",
+                  ninebotTone,
+                )}
+                title={`Ninebot (${ninebot.confidence}) — ${ninebot.reasons.join("; ")}`}
+              >
+                {ninebot.label.toUpperCase()}
+              </span>
+            )}
             {device.mock && (
               <span className="chip text-[8px] tracking-widest text-warning">MOCK</span>
             )}
