@@ -1,112 +1,83 @@
-## Xiaomi M365 Bluetooth Flasher — Native Mobile App
+## Add verified read/write of scooter identifiers
 
-A native Android/iOS app (built with Capacitor) that connects to Xiaomi M365-family scooters over Bluetooth Low Energy. Users can read scooter info, change the serial number, view a live dashboard, and flash DRV / BMS / BLE firmware from a curated online catalog or their own .bin file — with strong safety checks throughout.
+The Info screen already exists and reads serial + DRV/BLE/BMS firmware over the FE95 BLE link, with a "type CONFIRM" dialog before any serial write. What's missing is the **verify** half of the flow: after the write we never confirm the scooter actually accepted it. We also expose only a subset of the identifiers the protocol can read.
 
-### Scope (v1)
+This change closes both gaps without redoing existing UI.
 
-- **Targets:** Xiaomi M365, M365 Pro, 1S, Pro 2, Essential (same FE95 protocol family)
-- **Platform:** React + Vite app wrapped with Capacitor for iOS/Android, using a community-maintained BLE plugin (`@capacitor-community/bluetooth-le`)
-- **Style:** "Neon Garage" — JetBrains Mono headings, Work Sans body, dark navy `#0d1b2a` base, deep forest `#1b4332` surfaces, mint `#2dd4a8` primary actions, lime `#73ffb8` highlights. Tuner/garage-tool feel with mono numeric readouts.
+### Identifiers shown (read-only unless noted)
 
-### App structure
+| Field             | Source                  | Editable |
+|-------------------|-------------------------|----------|
+| Serial number     | ESC reg `0x10` (14 B)   | yes      |
+| DRV firmware      | ESC reg `0x1A` (u16)    | no       |
+| BLE firmware      | BLE reg `0x1A` (u16)    | no       |
+| BMS firmware      | BMS reg `0x1A` (u16)    | no       |
+| BMS serial        | BMS reg `0x10` (14 B)   | no (new) |
+| Hardware version  | ESC reg `0x19` (u16)    | no (new) |
+| Manufacture date  | BMS reg `0xB2` (u16)    | no (new) |
+| Total mileage     | ESC reg `0x29`          | no       |
 
-```text
-┌─ Connect screen ─────────────────────────────┐
-│  Scan → list of nearby M365-family scooters  │
-│  Tap to pair → handshake on FE95 service     │
-└──────────────────────────────────────────────┘
-            ↓ once connected, tab bar:
-┌──────────┬──────────┬──────────┬──────────┐
-│ Dashboard│  Info    │  Flash   │ Settings │
-└──────────┴──────────┴──────────┴──────────┘
-```
+The three "(new)" rows just need extra `readRegister` calls in `readInfo()`.
 
-#### 1. Connect
-- BLE scan with permission prompts (Android 12+ runtime perms, iOS Info.plist usage strings)
-- Filters for known Xiaomi scooter advertising names/services
-- Signal strength, last-seen scooter remembered for fast reconnect
-- Clear "disconnected" / "reconnecting" banner
+### Verify-after-write flow for the serial
 
-#### 2. Dashboard (live telemetry)
-- Big mono readouts: speed, battery %, voltage, current, motor temp, mode (eco / drive / sport)
-- Trip stats: current speed, total mileage, trip mileage, remaining range
-- Live polling of scooter serial commands; auto-pauses when tab hidden to save battery
-- Connection quality indicator
-
-#### 3. Info (read/write)
-- Read & display: serial number, DRV firmware version, BMS firmware version, BLE firmware version, total mileage, battery cycles, manufacture date
-- **Change serial number** flow with strong warning + double confirm
-- Copy-to-clipboard on every value
-
-#### 4. Flash
-The core feature. A guided, step-by-step flow:
+Today: `writeSerial(s)` → write bytes → `readInfo()` → trust whatever comes back.
+Now: a four-state state machine surfaced in the dialog itself.
 
 ```text
-Step 1  Pick target  → DRV / BMS / BLE
-Step 2  Pick firmware
-        • Online catalog (fetched from remote JSON registry — versions,
-          changelogs, compatibility per scooter model)
-        • Or import a custom .bin from device storage
-Step 3  Pre-flight checks (all must pass to continue)
-        ✓ Battery ≥ 50%
-        ✓ Scooter stationary, kickstand down
-        ✓ Phone battery ≥ 30%
-        ✓ Firmware compatible with detected model
-        ✓ User typed CONFIRM and acknowledged risk warning
-Step 4  Flashing
-        • Chunked write to FE95 with progress bar, % and KB/s
-        • Live log console (mono, green-on-dark)
-        • Abort button (where safe)
-        • Auto-handles disconnect → resume / fail-safe message
-Step 5  Verify & reboot
-        • Read back version, confirm match
-        • Success / failure screen with next steps
+┌────────────────────────────────────────────────────────┐
+│  CONFIRM SERIAL CHANGE                                 │
+│  Old:  16133/00012345                                  │
+│  New:  16133/00099999                                  │
+│  Type CONFIRM to proceed.        [_____________]       │
+│                                              [WRITE]   │
+└────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌────────────────────────────────────────────────────────┐
+│  WRITING…   ░░░░░▓▓▓▓▓░░░░░                            │
+│  Sending 14-byte payload to ESC reg 0x10               │
+└────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌────────────────────────────────────────────────────────┐
+│  VERIFYING…                                            │
+│  Re-reading ESC serial to confirm…                     │
+└────────────────────────────────────────────────────────┘
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+   ✓ VERIFIED                ✗ MISMATCH
+   Read back matches         Read back: "16133/00012345"
+   "16133/00099999"          Expected:  "16133/00099999"
+   [DONE]                    [RETRY]   [CANCEL]
 ```
 
-#### 5. Settings
-- Theme (dark only in v1)
-- Catalog source URL (so you can swap/extend the firmware registry)
-- Diagnostic log export (share .txt)
-- About / disclaimer / open-source notices
+Verify rules:
+- After write, wait 250 ms, call `readInfo()`, compare `info.serial` to the requested string (ignoring trailing spaces).
+- On mismatch: stay in the dialog, show old vs read-back vs expected, allow Retry (re-runs write+verify, max 3 attempts) or Cancel (closes dialog, original serial untouched in UI state).
+- On read failure / timeout: same UI as mismatch but labelled "READ FAILED".
+- Success: toast "Serial verified", close dialog, refresh Info panel from the verified read.
 
-### Safety system (applies everywhere)
-- Persistent disclaimer on first launch — user must accept
-- Hard battery / motion gating before any flash starts
-- All destructive actions (serial change, flash) require double confirm + typed keyword
-- If BLE drops mid-flash: scooter is left in a known state where possible, clear recovery instructions shown
-- All flash attempts logged locally with timestamp + outcome
+### Files I'll change
 
-### Firmware catalog (remote)
-- App fetches a JSON file (URL configurable in Settings) listing available firmwares:
-  - target (DRV/BMS/BLE), model compatibility, version, size, sha256, download URL, changelog, "stable/experimental" tag
-- App downloads + caches the .bin, verifies sha256 before allowing flash
-- Default catalog URL ships pointing to a placeholder you can host (e.g. GitHub Pages JSON) — easy to update without app rebuilds
+- `src/lib/m365/protocol.ts`
+  - Add `decodeBmsDate(word)` helper (5/4/7-bit packed Y/M/D, community-documented).
+  - Re-export the new register addresses already used.
+- `src/lib/m365/scooter-service.ts`
+  - Extend `ScooterInfo` with `bmsSerial`, `hwVersion`, `manufactureDate` (all optional strings).
+  - In `readInfo()` add the three extra reads + parsing branches in the `onFrame` collector.
+  - Replace `writeSerial(s)` with `writeSerialAndVerify(s) → { ok, written, readBack, attempt }` that writes, waits, re-reads, and returns the comparison. Mock path simulates a successful write.
+- `src/store/scooter-store.ts`
+  - No schema change; just consumes the wider `ScooterInfo` shape.
+- `src/hooks/use-scooter.ts`
+  - Replace `writeSerial` with `writeSerialAndVerify` returning the result object so the UI can drive its state machine.
+- `src/screens/InfoScreen.tsx`
+  - Add new identifier rows.
+  - Convert the existing `AlertDialog` into a multi-step dialog: `confirm → writing → verifying → verified | mismatch`, with Retry/Cancel on mismatch and a small inline log showing exactly what was sent and read back.
+  - Disable the WRITE button while a verify pass is in flight.
 
-### Visual design
-- Background: deep navy `#0d1b2a`, cards in `#11243a` with subtle 1px mint border at 10% opacity
-- Primary CTA: mint `#2dd4a8` with black text, soft glow on press
-- Danger actions (flash, change SN): outline in coral, fill on confirm
-- Numeric readouts: JetBrains Mono, lime `#73ffb8`, oversized
-- Subtle scanline / grid texture on Dashboard for "tuner" feel
-- Smooth tab transitions, haptic feedback on connect/disconnect/flash events (Capacitor Haptics)
+### Out of scope
 
-### Technical notes (for the curious)
-- `@capacitor-community/bluetooth-le` for cross-platform BLE
-- M365 protocol implementation: header `0x55 0xAA`, length, addr, cmd, args, checksum — encoded/decoded in a small `m365-protocol.ts` module with unit tests
-- Flash protocol mirrors the well-known community DRV-flash sequence (enter bootloader → erase → chunked write → verify CRC → reboot)
-- React Query for catalog fetching/caching; Zustand for live BLE connection state
-- All BLE work isolated in a `useScooter()` hook so UI components stay clean
-- Capacitor config (appId, hot-reload URL) and the iOS/Android native projects are added in this build; user must export to GitHub + run `npx cap add ios/android` and build via Xcode/Android Studio to install on a physical device (preview in browser will not have BLE)
-
-### Out of scope for v1 (can add later)
-- Ninebot/Segway support
-- Cloud account / sync of flash history across devices
-- OTA notification when new firmware lands in the catalog
-- Theme customization
-
-### What you'll do after I build this
-1. Export project to GitHub, `git pull`, `npm install`
-2. `npx cap add android` (and/or `ios` on a Mac)
-3. `npm run build && npx cap sync`
-4. `npx cap run android` (or open in Xcode for iOS) to install on your phone
-5. Host your firmware catalog JSON somewhere and paste the URL into Settings
+- Writing anything other than the serial (firmware versions are read-only by design).
+- Persisting an audit trail of serial changes — happy to add later if useful.
