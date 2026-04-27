@@ -20,6 +20,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Bluetooth, Loader2, RefreshCw, Search, Signal, X, Zap, Check,
   AlertTriangle, WifiOff, Plug, PlugZap, ChevronRight, Download, Upload, Bell, BellOff,
+  ChevronDown, ScrollText, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,34 @@ type ConnectPhase =
   | { kind: "connecting"; attempt: number; deadlineAt: number }
   | { kind: "backoff"; nextAttempt: number; resumeAt: number; lastError: string };
 
+/**
+ * One entry in the user-visible connection log. We keep the structure flat
+ * and tiny so the panel can render hundreds of events without churning.
+ *
+ * `kind` drives the row icon + color; `at` is captured at push time so the
+ * timestamp reflects when the event actually happened, not when React
+ * eventually re-rendered.
+ */
+type LogKind =
+  | "attempt-start"
+  | "attempt-ok"
+  | "timeout"
+  | "attempt-fail"
+  | "backoff"
+  | "cancel"
+  | "disconnect"
+  | "info";
+
+interface LogEntry {
+  id: number;
+  at: number;
+  kind: LogKind;
+  message: string;
+}
+
+/** Cap log size — old entries get evicted FIFO so memory stays bounded. */
+const LOG_MAX_ENTRIES = 100;
+
 function rssiBars(rssi: number): number {
   if (rssi >= -55) return 4;
   if (rssi >= -65) return 3;
@@ -80,6 +109,30 @@ export function GenericBleScreen() {
   const [connectPhase, setConnectPhase] = useState<ConnectPhase>({ kind: "idle" });
   // Tick clock so the banner countdown re-renders every ~250ms while connecting.
   const [now, setNow] = useState(() => Date.now());
+  // User-visible connection log. Newest entry first; capped at LOG_MAX_ENTRIES.
+  const [log, setLog] = useState<LogEntry[]>([]);
+  // Monotonic id generator for log entries — survives re-renders.
+  const logIdRef = useRef(0);
+
+  /**
+   * Append an entry to the connection log. Stable identity via useCallback so
+   * it can be safely depended on inside other callbacks. New entries go to
+   * the front so the panel reads top-down (most recent first).
+   */
+  const pushLog = useCallback((kind: LogKind, message: string) => {
+    setLog((prev) => {
+      const next: LogEntry = {
+        id: ++logIdRef.current,
+        at: Date.now(),
+        kind,
+        message,
+      };
+      const out = [next, ...prev];
+      return out.length > LOG_MAX_ENTRIES ? out.slice(0, LOG_MAX_ENTRIES) : out;
+    });
+  }, []);
+
+  const clearLog = useCallback(() => setLog([]), []);
 
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
@@ -135,12 +188,16 @@ export function GenericBleScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-render the banner countdown while a connect sequence is active.
+  // Re-render the banner countdown while a connect sequence is active, and
+  // also tick once per second whenever the connection log has any entries so
+  // the "Xs ago" relative timestamps stay accurate even when nothing else is
+  // happening on the screen.
   useEffect(() => {
-    if (connectPhase.kind === "idle") return;
-    const id = setInterval(() => setNow(Date.now()), 250);
+    const fast = connectPhase.kind !== "idle";
+    if (!fast && log.length === 0) return;
+    const id = setInterval(() => setNow(Date.now()), fast ? 250 : 1000);
     return () => clearInterval(id);
-  }, [connectPhase.kind]);
+  }, [connectPhase.kind, log.length]);
 
   // ---- connecting --------------------------------------------------------
 
@@ -157,8 +214,9 @@ export function GenericBleScreen() {
     setConnState("disconnected");
     setConnectedDevice(null);
     setConnError("cancelled by user");
+    pushLog("cancel", "Cancelled by user");
     try { await genericBle.disconnect(); } catch { /* ignore */ }
-  }, []);
+  }, [pushLog]);
 
   const connect = useCallback(async (d: GenericDevice) => {
     // Synchronous guard — rejects re-entry within the same tick before any
@@ -178,6 +236,7 @@ export function GenericBleScreen() {
     setConnState("connecting");
     setConnError(null);
     setServices([]);
+    pushLog("info", `Connect requested → ${d.name || d.deviceId.slice(0, 17)}`);
 
     const ac = new AbortController();
     connectAbortRef.current = ac;
@@ -194,6 +253,7 @@ export function GenericBleScreen() {
 
         const timeoutId = setTimeout(() => {
           finish(() => reject(new Error(`timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`)));
+          pushLog("timeout", `Attempt ${attempt} timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`);
           // Best-effort cleanup so the next attempt starts clean.
           genericBle.disconnect().catch(() => {});
         }, PER_ATTEMPT_TIMEOUT_MS);
@@ -210,6 +270,7 @@ export function GenericBleScreen() {
           attempt,
           deadlineAt: Date.now() + PER_ATTEMPT_TIMEOUT_MS,
         });
+        pushLog("attempt-start", `Attempt ${attempt}/${MAX_ATTEMPTS} started`);
 
         genericBle.connect(d.deviceId, () => {
           // Peer-initiated disconnect AFTER we resolved → propagate to UI.
@@ -259,10 +320,15 @@ export function GenericBleScreen() {
         try {
           await attemptOnce(attempt);
           lastError = null;
+          pushLog("attempt-ok", `Attempt ${attempt} succeeded — link up`);
           break;
         } catch (e) {
           lastError = e instanceof Error ? e : new Error(String(e));
           if (lastError.message === "cancelled") throw lastError;
+          // Avoid double-logging the timeout (already logged inside attemptOnce).
+          if (!lastError.message.startsWith("timed out")) {
+            pushLog("attempt-fail", `Attempt ${attempt} failed: ${lastError.message}`);
+          }
           if (attempt >= MAX_ATTEMPTS) throw lastError;
           const delay = BACKOFFS_MS[Math.min(attempt - 1, BACKOFFS_MS.length - 1)];
           const resumeAt = Date.now() + delay;
@@ -272,6 +338,7 @@ export function GenericBleScreen() {
             resumeAt,
             lastError: lastError.message,
           });
+          pushLog("backoff", `Backoff ${delay}ms before attempt ${attempt + 1}`);
           await sleepOrAbort(delay, resumeAt);
           if (aborted()) throw new Error("cancelled");
         }
@@ -296,12 +363,13 @@ export function GenericBleScreen() {
       }
       setConnError(msg);
       setConnState("error");
+      pushLog("attempt-fail", `Connect sequence failed: ${msg}`);
       try { await genericBle.disconnect(); } catch { /* ignore */ }
     } finally {
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
       connectInFlightRef.current = false;
     }
-  }, [connState]);
+  }, [connState, pushLog]);
 
   const disconnect = useCallback(async () => {
     connectAbortRef.current?.abort();
@@ -311,7 +379,8 @@ export function GenericBleScreen() {
     setConnectPhase({ kind: "idle" });
     setConnectedDevice(null);
     setServices([]);
-  }, []);
+    pushLog("disconnect", "Disconnected by user");
+  }, [pushLog]);
 
   // ---- filtering ---------------------------------------------------------
   const filtered = useMemo(() => {
@@ -338,6 +407,8 @@ export function GenericBleScreen() {
         onRetry={() => connectedDevice && connect(connectedDevice)}
       />
 
+      {/* Connection log — small expandable panel of timestamped events */}
+      <ConnectionLogPanel entries={log} onClear={clearLog} now={now} />
       {/* Discovered services panel — only when connected */}
       <AnimatePresence>
         {connState === "connected" && (
@@ -505,6 +576,158 @@ export function GenericBleScreen() {
 // ============================================================================
 // Sub-components
 // ============================================================================
+
+/**
+ * Compact, expandable connection log. Collapsed by default to keep the screen
+ * clean; once opened, shows a scrollable, color-coded list of every attempt,
+ * timeout, backoff, success, cancel and disconnect with absolute timestamps
+ * (HH:MM:SS.mmm) and a relative "Xs ago" hint that auto-refreshes.
+ *
+ * The header always shows the latest event so the user gets a one-line status
+ * even without expanding.
+ */
+function ConnectionLogPanel({
+  entries, onClear, now,
+}: {
+  entries: LogEntry[];
+  onClear: () => void;
+  now: number;
+}) {
+  const [open, setOpen] = useState(false);
+
+  // Latest entry in header — `entries` is already newest-first.
+  const latest = entries[0];
+
+  const meta: Record<LogKind, { label: string; cls: string; dot: string }> = {
+    "attempt-start": { label: "TRY",      cls: "text-primary-glow",      dot: "bg-primary-glow" },
+    "attempt-ok":    { label: "OK",       cls: "text-primary-glow",      dot: "bg-primary-glow" },
+    "timeout":       { label: "TIMEOUT",  cls: "text-warning",           dot: "bg-warning" },
+    "attempt-fail":  { label: "FAIL",     cls: "text-destructive",       dot: "bg-destructive" },
+    "backoff":       { label: "BACKOFF",  cls: "text-warning/80",        dot: "bg-warning/80" },
+    "cancel":        { label: "CANCEL",   cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+    "disconnect":    { label: "DISC",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+    "info":          { label: "INFO",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+  };
+
+  return (
+    <section className="panel overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-secondary/30 transition-colors"
+        aria-expanded={open}
+      >
+        <div className="w-7 h-7 rounded-md bg-secondary flex items-center justify-center shrink-0">
+          <ScrollText className="w-3.5 h-3.5 text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground flex items-center gap-2">
+            <span>Connection log</span>
+            <span className="text-muted-foreground/60 normal-case tracking-normal">
+              {entries.length} {entries.length === 1 ? "event" : "events"}
+            </span>
+          </div>
+          {latest ? (
+            <div className="mono text-[11px] truncate flex items-center gap-1.5">
+              <span className={cn("w-1 h-1 rounded-full shrink-0", meta[latest.kind].dot)} />
+              <span className={cn("shrink-0", meta[latest.kind].cls)}>
+                [{meta[latest.kind].label}]
+              </span>
+              <span className="text-foreground/85 truncate">{latest.message}</span>
+            </div>
+          ) : (
+            <div className="text-[11px] text-muted-foreground/70">No events yet.</div>
+          )}
+        </div>
+        <ChevronDown
+          className={cn(
+            "w-4 h-4 text-muted-foreground transition-transform shrink-0",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="log-body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="border-t border-border/50"
+          >
+            <div className="flex items-center justify-between px-3 py-1.5 bg-secondary/20">
+              <span className="mono text-[9px] tracking-widest uppercase text-muted-foreground/80">
+                Newest first · max {LOG_MAX_ENTRIES}
+              </span>
+              <button
+                type="button"
+                onClick={onClear}
+                disabled={entries.length === 0}
+                className="mono text-[9px] tracking-widest uppercase text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" /> Clear
+              </button>
+            </div>
+            <ul className="max-h-56 overflow-y-auto divide-y divide-border/30">
+              {entries.length === 0 ? (
+                <li className="px-3 py-4 text-center text-[11px] text-muted-foreground/70">
+                  Trigger a connect to see events appear here.
+                </li>
+              ) : (
+                entries.map((e) => (
+                  <li key={e.id} className="px-3 py-1.5 flex items-start gap-2">
+                    <span
+                      className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", meta[e.kind].dot)}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="mono text-[10px] text-muted-foreground/80 flex items-center gap-1.5">
+                        <span>{formatLogTime(e.at)}</span>
+                        <span className="text-muted-foreground/50">·</span>
+                        <span className={meta[e.kind].cls}>{meta[e.kind].label}</span>
+                        <span className="text-muted-foreground/50">·</span>
+                        <span>{formatRelative(e.at, now)}</span>
+                      </div>
+                      <div className="mono text-[11px] text-foreground/90 break-words leading-snug">
+                        {e.message}
+                      </div>
+                    </div>
+                  </li>
+                ))
+              )}
+            </ul>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+/** HH:MM:SS.mmm — fixed width so rows align nicely. */
+function formatLogTime(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+/** Short relative age — "now", "3s ago", "1m 12s ago", "2h ago". */
+function formatRelative(ts: number, now: number): string {
+  const sec = Math.max(0, Math.round((now - ts) / 1000));
+  if (sec < 1) return "now";
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  if (min < 60) return rem ? `${min}m ${rem}s ago` : `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  return `${hr}h ago`;
+}
+
+// ============================================================================
+// Sub-components
+// ============================================================================
+
 
 function ScanStateChip({ state, count }: { state: ScanState; count: number }) {
   const map: Record<ScanState, { label: string; cls: string; dot: string }> = {
