@@ -14,7 +14,7 @@ function rssiBars(rssi: number) {
 }
 
 export function ConnectScreen() {
-  const { state, devices, scan, connect, isNative, errorMessage, selected } = useScooter();
+  const { state, devices, scan, connect, isNative, errorMessage, selected, handshake } = useScooter();
 
   useEffect(() => {
     if (state === "idle" && devices.length === 0) scan();
@@ -44,6 +44,10 @@ export function ConnectScreen() {
           <PairedScooters
             busy={state === "connecting" || state === "scanning"}
             connectingId={state === "connecting" ? selected?.deviceId ?? null : null}
+            state={state}
+            activeDeviceId={selected?.deviceId ?? null}
+            handshakeOk={handshake ? handshake.ok : undefined}
+            errorMessage={errorMessage}
             onReconnect={(deviceId, name) =>
               connect({ deviceId, name, rssi: -127 })
             }
