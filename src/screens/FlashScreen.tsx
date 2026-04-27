@@ -752,13 +752,24 @@ function Mini({ label, value, warn }: { label: string; value: string; warn?: boo
 }
 
 function ResultCard({
-  result, target, error, onDone,
+  result, target, error, elapsedMs, bytesWritten, totalBytes, onDone,
 }: {
   result: "success" | "error" | "aborted-safe" | "aborted-unsafe" | null;
   target: Target;
   error: string;
+  elapsedMs: number;
+  bytesWritten: number;
+  totalBytes: number;
   onDone: () => void;
 }) {
+  const summary = (
+    <div className="mt-3 grid grid-cols-3 gap-2 w-full text-center">
+      <SummaryStat label="Written" value={`${formatBytes(bytesWritten)}${totalBytes ? ` / ${formatBytes(totalBytes)}` : ""}`} />
+      <SummaryStat label="Elapsed" value={formatDuration(elapsedMs)} />
+      <SummaryStat label="Target" value={target} />
+    </div>
+  );
+
   if (result === "success") {
     return (
       <div className="panel-glow p-6 flex flex-col items-center text-center">
@@ -769,6 +780,7 @@ function ResultCard({
         <p className="text-sm text-muted-foreground mt-2">
           {target} on your scooter is now running new firmware. Power-cycle the scooter to fully apply.
         </p>
+        {summary}
         <Button onClick={onDone} className="mt-5 mono tracking-widest">DONE</Button>
       </div>
     );
@@ -783,6 +795,7 @@ function ResultCard({
         <p className="text-sm text-muted-foreground mt-2">
           No data was written to the scooter. {error && <span className="block mt-1 text-xs">Reason: {error}</span>}
         </p>
+        {summary}
         <Button onClick={onDone} className="mt-5 mono tracking-widest">DONE</Button>
       </div>
     );
@@ -799,6 +812,7 @@ function ResultCard({
           Stay connected and reflash {target} immediately.
         </p>
         {error && <p className="text-[11px] text-muted-foreground mt-2">Reason: {error}</p>}
+        {summary}
         <Button onClick={onDone} className="mt-5 mono tracking-widest">REFLASH</Button>
       </div>
     );
@@ -814,7 +828,17 @@ function ResultCard({
         Don't power off. Reconnect and retry the flash to recover the scooter.
       </p>
       {error && <p className="text-[11px] text-muted-foreground mt-2">Reason: {error}</p>}
+      {summary}
       <Button onClick={onDone} className="mt-5 mono tracking-widest">DONE</Button>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border p-2">
+      <div className="mono text-[9px] tracking-widest text-muted-foreground">{label}</div>
+      <div className="mono text-xs mt-0.5 truncate">{value}</div>
     </div>
   );
 }
