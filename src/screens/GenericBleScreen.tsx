@@ -22,6 +22,7 @@ import {
   AlertTriangle, WifiOff, Plug, PlugZap, ChevronRight, Download, Upload, Bell, BellOff,
   ChevronDown, ScrollText, Trash2, Copy, ClipboardCheck,
   Clock, Unplug, ShieldAlert, HelpCircle,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
