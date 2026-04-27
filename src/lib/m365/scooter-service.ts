@@ -249,31 +249,56 @@ export class ScooterService {
    * Validate the BLE GATT layout against what the M365 protocol expects.
    * Must be called after connect() and before any flash operation.
    *
-   * Steps:
-   *  1. Trigger service discovery and enumerate the device's services.
-   *  2. Check that the FE95 service is present.
-   *  3. Check that the matching characteristic exposes both `write` and
-   *     `notify` properties.
-   *  4. Send a no-op probe read (FIRMWARE_VERSION on ESC) and confirm the
-   *     device replies — this catches devices that advertise the right UUIDs
-   *     but speak a different protocol on top (e.g. some Ninebot clones).
+   * Two-stage strategy:
+   *  1. **Strict M365**: look for the canonical FE95 service with a single
+   *     characteristic that supports both `write` and `notify`. This is the
+   *     genuine Xiaomi layout and is preferred whenever available.
+   *  2. **Clone-tolerant fallback**: walk `M365.HANDSHAKE.FALLBACKS` and
+   *     accept the first variant whose service exists and whose RX/TX
+   *     characteristics expose the listed properties (RX may be plain
+   *     `write` OR `writeWithoutResponse`; TX must be `notify`). When a
+   *     fallback is selected the result is flagged with `cloneMode = true`
+   *     and the UI surfaces an additional ack before flashing.
+   *
+   * In both cases the chosen RX/TX is stashed in `resolvedGatt`, the TX
+   * notification subscription is attached, and a no-op probe read against
+   * the ESC firmware register is issued. The probe must succeed (i.e. the
+   * device must speak the M365 framing protocol) for `ok = true` regardless
+   * of which variant resolved — this is the actual gate that protects
+   * non-M365 peripherals from being flashed.
+   *
+   * @param opts.cloneTolerant Defaults to `true`. Set `false` to refuse
+   *  fallbacks and only accept the strict M365 layout.
    */
-  async handshake(opts?: { onLog?: (line: string) => void }): Promise<HandshakeResult> {
+  async handshake(opts?: { onLog?: (line: string) => void; cloneTolerant?: boolean }): Promise<HandshakeResult> {
     const log = opts?.onLog ?? (() => {});
+    const cloneTolerant = opts?.cloneTolerant ?? true;
     const at = new Date().toISOString();
 
+    const baseFail = (reason: string, extras?: Partial<HandshakeResult>): HandshakeResult => ({
+      ok: false,
+      servicesFound: [],
+      missingServices: [...M365.HANDSHAKE.REQUIRED_SERVICES],
+      missingChars: [...M365.HANDSHAKE.REQUIRED_CHARS],
+      missingProps: [...M365.HANDSHAKE.REQUIRED_PROPS],
+      probeResponded: false,
+      reason,
+      at,
+      cloneMode: false,
+      variantId: null,
+      resolved: null,
+      warnings: [],
+      ...extras,
+    });
+
     if (!this.connectedId) {
-      const r: HandshakeResult = {
-        ok: false, servicesFound: [], missingServices: [...M365.HANDSHAKE.REQUIRED_SERVICES],
-        missingChars: [...M365.HANDSHAKE.REQUIRED_CHARS], missingProps: [...M365.HANDSHAKE.REQUIRED_PROPS],
-        probeResponded: false, reason: "not connected", at,
-      };
+      const r = baseFail("not connected");
       this.lastHandshake = r;
       return r;
     }
 
     if (!isNative()) {
-      // Web preview: simulate a successful handshake against the mock device.
+      // Web preview: simulate a successful strict handshake against the mock device.
       log("> handshake: mock device — assuming M365-compatible GATT");
       const r: HandshakeResult = {
         ok: true,
@@ -284,6 +309,10 @@ export class ScooterService {
         probeResponded: true,
         reason: "ok",
         at,
+        cloneMode: false,
+        variantId: "m365-strict",
+        resolved: { service: M365.SERVICE, rx: M365.CHAR_RX, tx: M365.CHAR_TX },
+        warnings: [],
       };
       this.lastHandshake = r;
       return r;
@@ -303,41 +332,104 @@ export class ScooterService {
         })),
       }));
     } catch (e) {
-      const r: HandshakeResult = {
-        ok: false, servicesFound: [], missingServices: [...M365.HANDSHAKE.REQUIRED_SERVICES],
-        missingChars: [...M365.HANDSHAKE.REQUIRED_CHARS], missingProps: [...M365.HANDSHAKE.REQUIRED_PROPS],
-        probeResponded: false, reason: `service discovery failed: ${e}`, at,
-      };
+      const r = baseFail(`service discovery failed: ${e}`);
       this.lastHandshake = r;
       log(`! handshake: ${r.reason}`);
       return r;
     }
 
     const servicesFound = services.map((s) => s.uuid);
-    const missingServices = M365.HANDSHAKE.REQUIRED_SERVICES.filter((u) => !servicesFound.includes(u));
-    const m365Service = services.find((s) => s.uuid === M365.SERVICE.toLowerCase());
-    const charsFound = (m365Service?.characteristics ?? []).map((c) => c.uuid);
-    const missingChars = M365.HANDSHAKE.REQUIRED_CHARS.filter((u) => !charsFound.includes(u));
 
-    const targetChar = m365Service?.characteristics.find((c) => c.uuid === M365.CHAR_RX.toLowerCase());
-    const missingProps = M365.HANDSHAKE.REQUIRED_PROPS.filter((p) => !targetChar?.properties?.[p]);
+    // ── Resolver: walk FALLBACKS in priority order. The first entry is the
+    // strict M365 layout, so when it matches we never enter clone mode. ──
+    type Variant = (typeof M365.HANDSHAKE.FALLBACKS)[number];
+    const tryVariant = (v: Variant): { ok: true; rxProp: string } | { ok: false; reason: string } => {
+      const svc = services.find((s) => s.uuid === v.service.toLowerCase());
+      if (!svc) return { ok: false, reason: `service ${v.service} not found` };
+      const rxChar = svc.characteristics.find((c) => c.uuid === v.rx.toLowerCase());
+      const txChar = svc.characteristics.find((c) => c.uuid === v.tx.toLowerCase());
+      if (!rxChar) return { ok: false, reason: `rx char ${v.rx} not found` };
+      if (!txChar) return { ok: false, reason: `tx char ${v.tx} not found` };
+      const rxProp = v.rxProps.find((p) => rxChar.properties?.[p]);
+      if (!rxProp) return { ok: false, reason: `rx missing ${v.rxProps.join("/")}` };
+      const hasTx = v.txProps.every((p) => txChar.properties?.[p]);
+      if (!hasTx) return { ok: false, reason: `tx missing ${v.txProps.join("/")}` };
+      return { ok: true, rxProp };
+    };
 
-    if (missingServices.length || missingChars.length || missingProps.length) {
-      const reason =
-        missingServices.length ? `missing service ${missingServices.join(", ")}` :
-        missingChars.length    ? `missing characteristic ${missingChars.join(", ")}` :
-                                 `characteristic missing properties: ${missingProps.join(", ")}`;
-      const r: HandshakeResult = {
-        ok: false, servicesFound, missingServices, missingChars, missingProps,
-        probeResponded: false, reason, at,
-      };
+    let chosen: { variant: Variant; rxProp: string } | null = null;
+    const tried: string[] = [];
+    for (const v of M365.HANDSHAKE.FALLBACKS) {
+      // Skip non-strict variants when caller opted out.
+      if (!cloneTolerant && v.id !== "m365-strict") continue;
+      const res = tryVariant(v);
+      tried.push(`${v.id}: ${res.ok ? "match" : res.reason}`);
+      if (res.ok) { chosen = { variant: v, rxProp: res.rxProp }; break; }
+    }
+
+    if (!chosen) {
+      const reason = cloneTolerant
+        ? `no compatible GATT layout (tried ${tried.length} variants)`
+        : `strict M365 layout not present`;
+      const m365Service = services.find((s) => s.uuid === M365.SERVICE.toLowerCase());
+      const charsFound = (m365Service?.characteristics ?? []).map((c) => c.uuid);
+      const missingChars = M365.HANDSHAKE.REQUIRED_CHARS.filter((u) => !charsFound.includes(u));
+      const targetChar = m365Service?.characteristics.find((c) => c.uuid === M365.CHAR_RX.toLowerCase());
+      const missingProps = M365.HANDSHAKE.REQUIRED_PROPS.filter((p) => !targetChar?.properties?.[p]);
+      const r = baseFail(reason, {
+        servicesFound,
+        missingServices: M365.HANDSHAKE.REQUIRED_SERVICES.filter((u) => !servicesFound.includes(u)),
+        missingChars,
+        missingProps,
+      });
       this.lastHandshake = r;
       log(`! handshake: ${reason}`);
+      tried.forEach((t) => log(`   • ${t}`));
       return r;
     }
 
-    // GATT shape is correct — now confirm the device actually speaks M365 by
-    // probing a known register and waiting for a parseable reply.
+    const isClone = chosen.variant.id !== "m365-strict";
+    const warnings: string[] = [];
+    if (isClone) warnings.push(`clone variant: ${chosen.variant.id}`);
+    if (chosen.rxProp === "writeWithoutResponse") warnings.push("RX uses writeWithoutResponse (no ACK)");
+
+    log(isClone
+      ? `> handshake: clone-tolerant match (${chosen.variant.id})`
+      : `> handshake: strict M365 GATT layout found`);
+
+    // Stash resolved triple BEFORE subscribing / probing so write() and the
+    // notification handler use the right characteristics.
+    this.resolvedGatt = {
+      service: chosen.variant.service,
+      rx: chosen.variant.rx,
+      tx: chosen.variant.tx,
+      rxWriteWithoutResponse: chosen.rxProp === "writeWithoutResponse",
+    };
+
+    // (Re)subscribe to the resolved TX characteristic.
+    try {
+      await BleClient.startNotifications(this.connectedId, this.resolvedGatt.service, this.resolvedGatt.tx, (data) => {
+        this.feedRx(new Uint8Array(data.buffer));
+      });
+    } catch (e) {
+      const r = baseFail(`could not subscribe to TX: ${e}`, {
+        servicesFound,
+        missingServices: [],
+        missingChars: [],
+        missingProps: [],
+        cloneMode: isClone,
+        variantId: chosen.variant.id,
+        resolved: { service: this.resolvedGatt.service, rx: this.resolvedGatt.rx, tx: this.resolvedGatt.tx },
+        warnings,
+      });
+      this.lastHandshake = r;
+      log(`! handshake: ${r.reason}`);
+      return r;
+    }
+
+    // Protocol probe — same gate regardless of variant. A clone that doesn't
+    // answer the M365 framing here will NOT pass the handshake, so flashing
+    // stays blocked.
     log("> handshake: probing ESC firmware register…");
     const probeResponded = await new Promise<boolean>((resolve) => {
       let done = false;
@@ -348,18 +440,31 @@ export class ScooterService {
         }
       });
       this.write(readRegister(M365.ADDR.ESC, M365.REG.FIRMWARE_VERSION, 2)).catch(() => {});
-      setTimeout(() => { if (!done) { off(); resolve(false); } }, 1500);
+      // Clones can be slower to respond, especially on writeWithoutResponse paths.
+      const probeTimeout = isClone ? 2500 : 1500;
+      setTimeout(() => { if (!done) { off(); resolve(false); } }, probeTimeout);
     });
 
     const r: HandshakeResult = {
       ok: probeResponded,
-      servicesFound, missingServices, missingChars, missingProps,
+      servicesFound,
+      missingServices: [],
+      missingChars: [],
+      missingProps: [],
       probeResponded,
-      reason: probeResponded ? "ok" : "no response to probe (device may not speak M365 protocol)",
+      reason: probeResponded
+        ? (isClone ? "ok (clone-tolerant)" : "ok")
+        : "no response to probe (device may not speak M365 protocol)",
       at,
+      cloneMode: isClone,
+      variantId: chosen.variant.id,
+      resolved: { service: this.resolvedGatt.service, rx: this.resolvedGatt.rx, tx: this.resolvedGatt.tx },
+      warnings,
     };
     this.lastHandshake = r;
-    log(probeResponded ? "> handshake: OK" : `! handshake: ${r.reason}`);
+    log(probeResponded
+      ? (isClone ? `> handshake: OK (clone variant ${chosen.variant.id})` : "> handshake: OK")
+      : `! handshake: ${r.reason}`);
     return r;
   }
 
