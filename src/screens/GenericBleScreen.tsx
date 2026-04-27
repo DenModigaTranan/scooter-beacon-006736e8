@@ -1896,7 +1896,7 @@ function ConnStatusBanner({
 }
 
 function DeviceRow({
-  device, isConnected, isConnecting, disabled, onConnect, onDisconnect,
+  device, isConnected, isConnecting, disabled, onConnect, onDisconnect, targetModelId,
 }: {
   device: GenericDevice;
   isConnected: boolean;
@@ -1904,6 +1904,12 @@ function DeviceRow({
   disabled: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
+  // "auto" or a model id from the registry. When pinned to a specific
+  // model, the row's Connect button is disabled (with an explanatory
+  // tooltip) for devices whose detected model doesn't match — preventing
+  // accidental connects when troubleshooting a specific scooter in a
+  // multi-device environment.
+  targetModelId: string;
 }) {
   const bars = rssiBars(device.rssi);
   // Cheap, pure heuristic — runs once per render. Used to surface a
