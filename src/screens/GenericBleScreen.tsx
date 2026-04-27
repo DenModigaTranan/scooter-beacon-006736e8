@@ -210,8 +210,9 @@ export function GenericBleScreen() {
     setConnState("disconnected");
     setConnectedDevice(null);
     setConnError("cancelled by user");
+    pushLog("cancel", "Cancelled by user");
     try { await genericBle.disconnect(); } catch { /* ignore */ }
-  }, []);
+  }, [pushLog]);
 
   const connect = useCallback(async (d: GenericDevice) => {
     // Synchronous guard — rejects re-entry within the same tick before any
