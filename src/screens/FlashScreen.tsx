@@ -326,6 +326,17 @@ export function FlashScreen() {
       setFlashResult("success");
       setStep(5);
       toast.success(`${target} flashed`);
+      // Persist outcome against the paired profile so the user sees what
+      // they last flashed when they re-connect.
+      if (selectedDevice) {
+        const label = customFile?.name ?? selected?.version ?? "unknown";
+        recordPairedFlash(selectedDevice.deviceId, {
+          target, label, size: firmwareBytes.length, at: Date.now(), result: "success",
+        });
+      }
+      // Refresh info so the paired-profile snapshot picks up new fw versions
+      // on the next upsert (and the UI shows them immediately).
+      refreshInfo().catch(() => {});
     } catch (e) {
       finishedAtRef.current = Date.now();
       if (e instanceof FlashAbortError) {
