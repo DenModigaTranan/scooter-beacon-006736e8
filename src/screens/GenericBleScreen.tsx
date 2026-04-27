@@ -1999,6 +1999,14 @@ function DeviceRow({
             {device.mock && (
               <span className="chip text-[8px] tracking-widest text-warning">MOCK</span>
             )}
+            {targetMismatch && (
+              <span
+                className="chip text-[8px] tracking-widest text-warning border border-warning/40"
+                title={`Doesn't match the pinned target model. Detected: ${ninebotModel?.model.displayName ?? "non-Ninebot device"}.`}
+              >
+                MISMATCH
+              </span>
+            )}
           </div>
           <div className="mono text-[10px] text-muted-foreground tracking-widest truncate">
             {device.deviceId.slice(0, 17).toUpperCase()} · {device.rssi} dBm
