@@ -22,6 +22,8 @@ type Step = 1 | 2 | 3 | 4 | 5;
 
 export function FlashScreen() {
   const { telemetry, info, appendLog, clearLog, flashLog } = useScooter();
+  const pendingFlash = useScooterStore((s) => s.pendingFlash);
+  const setPendingFlash = useScooterStore((s) => s.setPendingFlash);
   const [step, setStep] = useState<Step>(1);
   const [target, setTarget] = useState<Target>("DRV");
   const [selected, setSelected] = useState<FirmwareEntry | null>(null);
@@ -51,7 +53,17 @@ export function FlashScreen() {
     return { battery, moving, phone, fwOk, confirmOk, all: battery && moving && phone && fwOk && confirmOk };
   }, [telemetry, selected, customFile, confirmText]);
 
-  useEffect(() => { setStep(1); setSelected(null); setCustomFile(null); setProgress(0); setFlashResult(null); }, [/* mount */]);
+  // If the user picked a release from the Catalog screen, jump straight to
+  // pre-flight checks with the right target + entry pre-selected. Then clear
+  // the queue so re-visiting Flash later doesn't keep skipping ahead.
+  useEffect(() => {
+    if (!pendingFlash) return;
+    setTarget(pendingFlash.target);
+    setSelected(pendingFlash);
+    setCustomFile(null);
+    setStep(3);
+    setPendingFlash(null);
+  }, [pendingFlash, setPendingFlash]);
 
   const onPickFile = async (file: File) => {
     const buf = new Uint8Array(await file.arrayBuffer());
