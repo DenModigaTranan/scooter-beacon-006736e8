@@ -1,11 +1,12 @@
-import { Bluetooth, Gauge, Info, Settings as SettingsIcon, Zap } from "lucide-react";
+import { Bluetooth, Database, Gauge, Info, Settings as SettingsIcon, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type TabKey = "dashboard" | "info" | "flash" | "settings";
+export type TabKey = "dashboard" | "info" | "catalog" | "flash" | "settings";
 
 const tabs: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "dashboard", label: "Dash", icon: Gauge },
   { key: "info", label: "Info", icon: Info },
+  { key: "catalog", label: "Releases", icon: Database },
   { key: "flash", label: "Flash", icon: Zap },
   { key: "settings", label: "Setup", icon: SettingsIcon },
 ];
