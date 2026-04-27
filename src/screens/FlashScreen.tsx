@@ -49,12 +49,23 @@ export function FlashScreen() {
   const [progress, setProgress] = useState(0);
   const [bytesWritten, setBytesWritten] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
+  const [downloadedBytes, setDownloadedBytes] = useState(0);
   const [flashing, setFlashing] = useState(false);
   const [flashStatus, setFlashStatus] = useState<string>("idle");
   const [safeToAbort, setSafeToAbort] = useState(true);
   const [flashResult, setFlashResult] = useState<"success" | "error" | "aborted-safe" | "aborted-unsafe" | null>(null);
   const [flashError, setFlashError] = useState<string>("");
   const [retryingHandshake, setRetryingHandshake] = useState(false);
+
+  // Per-phase status for the live progress checklist + final summary.
+  const [phaseStates, setPhaseStates] = useState<Record<PhaseId, PhaseState>>({
+    download: "pending", arm: "pending", write: "pending", verify: "pending", done: "pending",
+  });
+  // Real-time clock source so elapsed/ETA/throughput re-render every ~250ms.
+  const [now, setNow] = useState<number>(() => Date.now());
+  const startedAtRef = useRef<number | null>(null);
+  const writeStartedAtRef = useRef<number | null>(null);
+  const finishedAtRef = useRef<number | null>(null);
 
   // Confirmation dialogs
   const [confirmOpen, setConfirmOpen] = useState(false);
