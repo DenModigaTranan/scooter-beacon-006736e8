@@ -706,7 +706,85 @@ export function GenericBleScreen() {
  * The header always shows the latest event so the user gets a one-line status
  * even without expanding.
  */
-function ConnectionLogPanel({
+/**
+ * Compact one-liner shown above the log panel summarizing the most recent
+ * failure: attempt number, reason, and (when the sequence has fully ended)
+ * the total duration of that run. Auto-hides on success.
+ */
+function FailureSummaryChip({
+  data, now,
+}: {
+  data: {
+    entry: LogEntry;
+    attempt: number | null;
+    reason: string;
+    isTimeout: boolean;
+    totalLabel: string | null;
+    ended: boolean;
+  } | null;
+  now: number;
+}) {
+  if (!data) return null;
+  const { entry, attempt, reason, isTimeout, totalLabel, ended } = data;
+  const ageSec = Math.max(0, Math.round((now - entry.at) / 1000));
+  const ageLabel =
+    ageSec < 1 ? "just now"
+    : ageSec < 60 ? `${ageSec}s ago`
+    : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m ago`
+    : `${Math.floor(ageSec / 3600)}h ago`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={cn(
+        "panel p-2.5 flex items-start gap-2.5 border",
+        isTimeout ? "border-warning/40 bg-warning/5" : "border-destructive/40 bg-destructive/5",
+      )}
+      role="status"
+      aria-live="polite"
+    >
+      <div className={cn(
+        "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
+        isTimeout ? "bg-warning/20" : "bg-destructive/20",
+      )}>
+        <AlertTriangle className={cn(
+          "w-3.5 h-3.5",
+          isTimeout ? "text-warning" : "text-destructive",
+        )} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className={cn(
+          "mono text-[10px] tracking-[0.22em] uppercase flex items-center gap-2 flex-wrap",
+          isTimeout ? "text-warning" : "text-destructive",
+        )}>
+          <span>Last failure</span>
+          {attempt !== null && (
+            <span className="text-muted-foreground/80 normal-case tracking-normal">
+              attempt {attempt}/{MAX_ATTEMPTS}
+            </span>
+          )}
+          {totalLabel && (
+            <span className="text-muted-foreground/80 normal-case tracking-normal">
+              · total {totalLabel}
+            </span>
+          )}
+          {!ended && (
+            <span className="text-muted-foreground/80 normal-case tracking-normal">
+              · in progress
+            </span>
+          )}
+          <span className="text-muted-foreground/60 normal-case tracking-normal">· {ageLabel}</span>
+        </div>
+        <div className="mono text-[11px] text-foreground/90 leading-snug break-words">
+          {reason}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+
   entries, onClear, now,
 }: {
   entries: LogEntry[];
