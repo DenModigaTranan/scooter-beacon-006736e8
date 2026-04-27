@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, Cpu, FileUp, Loader2, ShieldCheck, Zap, ChevronRight, Check, X } from "lucide-react";
+import {
+  AlertTriangle, Cpu, FileUp, Loader2, ShieldCheck, Zap, ChevronRight,
+  Check, X, BatteryWarning, Wifi, WifiOff, Square,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { useScooter } from "@/hooks/use-scooter";
+import { usePhoneBattery } from "@/hooks/use-phone-battery";
 import { fetchCatalog, type FirmwareEntry } from "@/lib/m365/catalog";
-import { scooter } from "@/lib/m365/scooter-service";
+import { scooter, FlashAbortError } from "@/lib/m365/scooter-service";
 import { useScooterStore } from "@/store/scooter-store";
 import { toast } from "sonner";
 import {
@@ -20,24 +24,51 @@ import { cn } from "@/lib/utils";
 type Target = "DRV" | "BMS" | "BLE";
 type Step = 1 | 2 | 3 | 4 | 5;
 
+/** Minimum scooter battery required to flash. */
+const MIN_SCOOTER_BATTERY_PCT = 50;
+/** Minimum phone battery required to flash (when reported by the OS). */
+const MIN_PHONE_BATTERY_PCT = 30;
+/** How long the START FLASH dialog must "arm" before the user can confirm. */
+const ARM_COUNTDOWN_S = 3;
+
 export function FlashScreen() {
-  const { telemetry, info, appendLog, clearLog, flashLog, rerunHandshake } = useScooter();
+  const { telemetry, info, appendLog, clearLog, flashLog, rerunHandshake, state: connState } = useScooter();
   const pendingFlash = useScooterStore((s) => s.pendingFlash);
   const setPendingFlash = useScooterStore((s) => s.setPendingFlash);
   const handshake = useScooterStore((s) => s.handshake);
+  const phoneBattery = usePhoneBattery();
+
   const [step, setStep] = useState<Step>(1);
   const [target, setTarget] = useState<Target>("DRV");
   const [selected, setSelected] = useState<FirmwareEntry | null>(null);
   const [customFile, setCustomFile] = useState<{ name: string; bytes: Uint8Array } | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
+  const [riskAck, setRiskAck] = useState(false);
   const [progress, setProgress] = useState(0);
   const [bytesWritten, setBytesWritten] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
   const [flashing, setFlashing] = useState(false);
-  const [flashResult, setFlashResult] = useState<"success" | "error" | null>(null);
+  const [flashStatus, setFlashStatus] = useState<string>("idle");
+  const [safeToAbort, setSafeToAbort] = useState(true);
+  const [flashResult, setFlashResult] = useState<"success" | "error" | "aborted-safe" | "aborted-unsafe" | null>(null);
+  const [flashError, setFlashError] = useState<string>("");
   const [retryingHandshake, setRetryingHandshake] = useState(false);
+
+  // Confirmation dialogs
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [armCountdown, setArmCountdown] = useState(ARM_COUNTDOWN_S);
+  const [abortOpen, setAbortOpen] = useState(false);
+
+  const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Mirror reactive state into refs so the safety guard sees the latest
+  // values without re-creating the callback on every yield.
+  const telemetryRef = useRef(telemetry);
+  const phoneBatteryRef = useRef(phoneBattery);
+  const connStateRef = useRef(connState);
+  useEffect(() => { telemetryRef.current = telemetry; }, [telemetry]);
+  useEffect(() => { phoneBatteryRef.current = phoneBattery; }, [phoneBattery]);
+  useEffect(() => { connStateRef.current = connState; }, [connState]);
 
   const catalogQ = useQuery({ queryKey: ["fw-catalog"], queryFn: ({ signal }) => fetchCatalog(signal) });
 
@@ -46,24 +77,38 @@ export function FlashScreen() {
     [catalogQ.data, target]
   );
 
+  // ─── Pre-flight checks ─────────────────────────────────────────────
   const checks = useMemo(() => {
-    const battery = (telemetry?.batteryPct ?? 0) >= 50;
+    const connected = connState === "connected";
+    const handshakeOk = !!handshake?.ok;
+    const battery = (telemetry?.batteryPct ?? 0) >= MIN_SCOOTER_BATTERY_PCT;
     const moving = (telemetry?.speedKph ?? 0) <= 0.5;
-    const phone = true; // simplified — could read battery via Web API on Android
+    // If the API isn't available we don't block — but if it IS available we
+    // require ≥ MIN_PHONE_BATTERY_PCT so a dying phone can't drop the BLE link
+    // mid-flash.
+    const phone = phoneBattery.unsupported || phoneBattery.charging === true || (phoneBattery.pct ?? 0) >= MIN_PHONE_BATTERY_PCT;
     const fwOk = !!(selected || customFile);
     const confirmOk = confirmText === "CONFIRM";
-    const handshakeOk = !!handshake?.ok;
-    return { battery, moving, phone, fwOk, confirmOk, handshakeOk, all: battery && moving && phone && fwOk && confirmOk && handshakeOk };
-  }, [telemetry, selected, customFile, confirmText, handshake]);
+    const versionDetected = !!info;
+    const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck;
+    return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, all };
+  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck]);
 
-  const onRetryHandshake = async () => {
-    setRetryingHandshake(true);
-    try { await rerunHandshake(); } finally { setRetryingHandshake(false); }
+  // ─── Safety guard called by scooter.flash() before every chunk ─────
+  const safetyCheck = (): string | null => {
+    if (connStateRef.current !== "connected") return "BLE connection lost";
+    const t = telemetryRef.current;
+    if (!t) return "lost telemetry stream";
+    if (t.batteryPct < MIN_SCOOTER_BATTERY_PCT - 5) return `scooter battery dropped to ${Math.round(t.batteryPct)}%`;
+    if (t.speedKph > 1) return `scooter started moving (${t.speedKph.toFixed(1)} km/h)`;
+    const pb = phoneBatteryRef.current;
+    if (!pb.unsupported && pb.charging === false && (pb.pct ?? 100) < 15) {
+      return `phone battery critical (${pb.pct}%)`;
+    }
+    return null;
   };
 
-  // If the user picked a release from the Catalog screen, jump straight to
-  // pre-flight checks with the right target + entry pre-selected. Then clear
-  // the queue so re-visiting Flash later doesn't keep skipping ahead.
+  // ─── Pending firmware from catalog ────────────────────────────────
   useEffect(() => {
     if (!pendingFlash) return;
     setTarget(pendingFlash.target);
@@ -72,6 +117,28 @@ export function FlashScreen() {
     setStep(3);
     setPendingFlash(null);
   }, [pendingFlash, setPendingFlash]);
+
+  // ─── Block accidental tab-close / refresh during a flash ──────────
+  useEffect(() => {
+    if (!flashing) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Flash in progress — leaving will brick the scooter.";
+      return e.returnValue;
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [flashing]);
+
+  // ─── Arm countdown for the START FLASH dialog ─────────────────────
+  useEffect(() => {
+    if (!confirmOpen) { setArmCountdown(ARM_COUNTDOWN_S); return; }
+    setArmCountdown(ARM_COUNTDOWN_S);
+    const t = setInterval(() => {
+      setArmCountdown((n) => (n > 0 ? n - 1 : 0));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [confirmOpen]);
 
   const onPickFile = async (file: File) => {
     const buf = new Uint8Array(await file.arrayBuffer());
@@ -84,24 +151,47 @@ export function FlashScreen() {
     setStep(3);
   };
 
+  const onRetryHandshake = async () => {
+    setRetryingHandshake(true);
+    try { await rerunHandshake(); } finally { setRetryingHandshake(false); }
+  };
+
+  const requestAbort = () => {
+    if (!flashing) return;
+    setAbortOpen(true);
+  };
+
+  const confirmAbort = () => {
+    abortRef.current?.abort();
+    appendLog("! ABORT requested by user");
+    setAbortOpen(false);
+  };
+
+  // ─── Main flash flow ──────────────────────────────────────────────
   const startFlash = async () => {
     if (!checks.all) return;
-    setFlashing(true);
     setConfirmOpen(false);
+    setFlashing(true);
     setStep(4);
     clearLog();
     setProgress(0);
+    setBytesWritten(0);
+    setSafeToAbort(true);
+    setFlashStatus("preparing");
     setFlashResult(null);
+    setFlashError("");
+
+    const ac = new AbortController();
+    abortRef.current = ac;
 
     let firmwareBytes: Uint8Array;
     if (customFile) {
       firmwareBytes = customFile.bytes;
     } else if (selected) {
-      // attempt download; fall back to a synthetic buffer for catalog entries with no URL (preview)
       try {
         if (selected.url) {
           appendLog(`> downloading ${selected.url}`);
-          const r = await fetch(selected.url);
+          const r = await fetch(selected.url, { signal: ac.signal });
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           firmwareBytes = new Uint8Array(await r.arrayBuffer());
         } else {
@@ -109,10 +199,18 @@ export function FlashScreen() {
           firmwareBytes = new Uint8Array(selected.size);
         }
       } catch (e) {
-        appendLog(`! download failed: ${e}`);
-        toast.error("Download failed");
+        if (ac.signal.aborted) {
+          appendLog(`! aborted before flash`);
+          setFlashResult("aborted-safe");
+          setFlashError("Aborted before any data was written.");
+        } else {
+          appendLog(`! download failed: ${e}`);
+          toast.error("Download failed");
+          setFlashResult("error");
+          setFlashError(String(e));
+        }
         setFlashing(false);
-        setFlashResult("error");
+        setStep(5);
         return;
       }
     } else {
@@ -123,27 +221,44 @@ export function FlashScreen() {
     setTotalBytes(firmwareBytes.length);
 
     try {
-      for await (const p of scooter.flash(target, firmwareBytes, { onLog: appendLog })) {
+      for await (const p of scooter.flash(target, firmwareBytes, {
+        onLog: appendLog,
+        signal: ac.signal,
+        preflightCheck: safetyCheck,
+      })) {
         setProgress(p.pct);
         setBytesWritten(p.bytes);
+        setFlashStatus(p.status);
+        setSafeToAbort(p.safeToAbort);
       }
       setFlashResult("success");
       setStep(5);
       toast.success(`${target} flashed`);
     } catch (e) {
-      appendLog(`! ERROR ${e}`);
-      setFlashResult("error");
+      if (e instanceof FlashAbortError) {
+        appendLog(`! ABORT (${e.phase}): ${e.message}`);
+        setFlashResult(e.phase === "safe" ? "aborted-safe" : "aborted-unsafe");
+        setFlashError(e.message);
+        if (e.phase === "safe") toast(`Flash aborted safely`);
+        else toast.error(`Flash aborted mid-write — REFLASH IMMEDIATELY`);
+      } else {
+        appendLog(`! ERROR ${e}`);
+        setFlashResult("error");
+        setFlashError(String(e));
+        toast.error("Flash failed");
+      }
       setStep(5);
-      toast.error("Flash failed");
     } finally {
       setFlashing(false);
+      abortRef.current = null;
     }
   };
 
   const reset = () => {
     setStep(1); setSelected(null); setCustomFile(null);
     setProgress(0); setBytesWritten(0); setTotalBytes(0);
-    setFlashResult(null); setConfirmText("");
+    setFlashResult(null); setConfirmText(""); setRiskAck(false);
+    setFlashStatus("idle"); setFlashError("");
   };
 
   return (
@@ -248,15 +363,42 @@ export function FlashScreen() {
 
             <div className="panel p-4 mt-3 space-y-1">
               <Check2
+                ok={checks.connected}
+                icon={checks.connected ? <Wifi className="w-4 h-4 text-primary-glow" /> : <WifiOff className="w-4 h-4 text-destructive" />}
+                label="BLE connected"
+                value={connState}
+              />
+              <Check2
                 ok={checks.handshakeOk}
-                label="BLE protocol handshake"
+                label="M365 protocol handshake"
                 value={handshake ? (handshake.ok ? "validated" : handshake.reason) : "pending"}
               />
-              <Check2 ok={checks.battery} label={`Scooter battery ≥ 50%`} value={`${Math.round(telemetry?.batteryPct ?? 0)}%`} />
-              <Check2 ok={checks.moving} label="Scooter stationary" value={`${(telemetry?.speedKph ?? 0).toFixed(1)} km/h`} />
-              <Check2 ok={checks.phone} label="Phone battery ≥ 30%" value="ok" />
+              <Check2
+                ok={checks.battery}
+                label={`Scooter battery ≥ ${MIN_SCOOTER_BATTERY_PCT}%`}
+                value={`${Math.round(telemetry?.batteryPct ?? 0)}%`}
+              />
+              <Check2
+                ok={checks.moving}
+                label="Scooter stationary"
+                value={`${(telemetry?.speedKph ?? 0).toFixed(1)} km/h`}
+              />
+              <Check2
+                ok={checks.phone}
+                icon={checks.phone ? undefined : <BatteryWarning className="w-4 h-4 text-destructive" />}
+                label={`Phone battery ≥ ${MIN_PHONE_BATTERY_PCT}%`}
+                value={
+                  phoneBattery.unsupported
+                    ? "n/a"
+                    : `${phoneBattery.pct ?? "—"}%${phoneBattery.charging ? " ⚡" : ""}`
+                }
+              />
               <Check2 ok={checks.fwOk} label="Firmware selected" value={selected?.version ?? customFile?.name ?? "—"} />
-              <Check2 ok={!!info} label={`${target} version detected`} value={info ? (target === "DRV" ? info.drvVersion : target === "BMS" ? info.bmsVersion : info.bleVersion) : "—"} />
+              <Check2
+                ok={checks.versionDetected}
+                label={`${target} version detected`}
+                value={info ? (target === "DRV" ? info.drvVersion : target === "BMS" ? info.bmsVersion : info.bleVersion) : "—"}
+              />
             </div>
 
             {!checks.handshakeOk && (
@@ -283,9 +425,25 @@ export function FlashScreen() {
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed mb-3">
                 Flashing the wrong firmware, or a bad disconnect mid-flash, can brick your scooter or damage the battery.
-                Type <span className="mono text-warning">CONFIRM</span> below to proceed.
+                Type <span className="mono text-warning">CONFIRM</span> below and tick the box to proceed.
               </p>
-              <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value.toUpperCase())} placeholder="CONFIRM" className="mono" />
+              <Input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
+                placeholder="CONFIRM"
+                className="mono"
+              />
+              <label className="mt-3 flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={riskAck}
+                  onChange={(e) => setRiskAck(e.target.checked)}
+                  className="mt-0.5 accent-warning"
+                />
+                <span className="text-xs text-muted-foreground leading-relaxed">
+                  I understand this can permanently damage my scooter and accept full responsibility.
+                </span>
+              </label>
             </div>
 
             <div className="flex gap-2 mt-4">
@@ -312,8 +470,35 @@ export function FlashScreen() {
                 </div>
               </div>
               <Progress value={progress * 100} className="h-2" />
-              <div className="mt-1 mono text-[10px] text-muted-foreground">DO NOT POWER OFF</div>
+              <div className="mt-1 flex items-center justify-between mono text-[10px] text-muted-foreground">
+                <span>{flashStatus.toUpperCase()}</span>
+                <span className={safeToAbort ? "text-primary-glow" : "text-warning"}>
+                  {safeToAbort ? "SAFE TO ABORT" : "DO NOT POWER OFF"}
+                </span>
+              </div>
             </div>
+
+            {/* Live safety strip — re-renders every telemetry tick. */}
+            <div className="panel mt-3 p-3 grid grid-cols-3 gap-2 text-center">
+              <Mini label="SCOOT" value={`${Math.round(telemetry?.batteryPct ?? 0)}%`} warn={(telemetry?.batteryPct ?? 0) < MIN_SCOOTER_BATTERY_PCT - 5} />
+              <Mini label="PHONE" value={phoneBattery.unsupported ? "n/a" : `${phoneBattery.pct ?? "—"}%`} warn={!phoneBattery.unsupported && phoneBattery.charging === false && (phoneBattery.pct ?? 100) < 15} />
+              <Mini label="LINK" value={connState === "connected" ? "OK" : "LOST"} warn={connState !== "connected"} />
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={requestAbort}
+              disabled={!flashing}
+              className={cn(
+                "w-full mt-3 mono tracking-widest",
+                safeToAbort
+                  ? "border-warning/50 text-warning hover:bg-warning/10"
+                  : "border-destructive/50 text-destructive hover:bg-destructive/10"
+              )}
+            >
+              <Square className="w-4 h-4 mr-2" />
+              {safeToAbort ? "ABORT (SAFE)" : "ABORT (UNSAFE)"}
+            </Button>
 
             <div className="panel mt-3 p-3">
               <div className="mono text-[10px] text-muted-foreground tracking-widest mb-2">CONSOLE</div>
@@ -328,33 +513,12 @@ export function FlashScreen() {
 
         {step === 5 && (
           <motion.div key="s5" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
-            <div className={cn(
-              "panel-glow p-6 flex flex-col items-center text-center",
-              flashResult === "error" && "border-destructive/50 shadow-none"
-            )}>
-              {flashResult === "success" ? (
-                <>
-                  <div className="w-14 h-14 rounded-full bg-gradient-mint flex items-center justify-center mb-3 pulse-ring">
-                    <Check className="w-7 h-7 text-primary-foreground" />
-                  </div>
-                  <div className="mono text-lg tracking-widest text-primary-glow">FLASH OK</div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    {target} on your scooter is now running new firmware. Power-cycle the scooter to fully apply.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <div className="w-14 h-14 rounded-full bg-destructive/20 border border-destructive flex items-center justify-center mb-3">
-                    <X className="w-7 h-7 text-destructive" />
-                  </div>
-                  <div className="mono text-lg tracking-widest text-destructive">FLASH FAILED</div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Don't power off. Reconnect and retry the flash to recover the scooter.
-                  </p>
-                </>
-              )}
-              <Button onClick={reset} className="mt-5 mono tracking-widest">DONE</Button>
-            </div>
+            <ResultCard
+              result={flashResult}
+              target={target}
+              error={flashError}
+              onDone={reset}
+            />
             <div className="panel mt-3 p-3">
               <div className="mono text-[10px] text-muted-foreground tracking-widest mb-2">CONSOLE</div>
               <ScrollArea className="h-32">
@@ -367,6 +531,7 @@ export function FlashScreen() {
         )}
       </AnimatePresence>
 
+      {/* ── START FLASH confirmation, with arm countdown ── */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -375,12 +540,57 @@ export function FlashScreen() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               You are about to write <span className="mono text-primary-glow">{selected?.version ?? customFile?.name}</span> to
-              the <span className="mono text-primary-glow">{target}</span>. Keep your scooter close, do not turn it off.
+              the <span className="mono text-primary-glow">{target}</span>.
+              <br />Keep your scooter close. Do not turn it off. Do not lock your phone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={startFlash} className="bg-gradient-mint text-primary-foreground mono">FLASH NOW</AlertDialogAction>
+            <AlertDialogAction
+              onClick={startFlash}
+              disabled={armCountdown > 0}
+              className="bg-gradient-mint text-primary-foreground mono disabled:opacity-50"
+            >
+              {armCountdown > 0 ? `ARMING… ${armCountdown}s` : "FLASH NOW"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── ABORT confirmation, escalates messaging based on phase ── */}
+      <AlertDialog open={abortOpen} onOpenChange={setAbortOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className={cn("mono tracking-widest flex items-center gap-2", safeToAbort ? "text-warning" : "text-destructive")}>
+              <AlertTriangle className="w-5 h-5" /> ABORT FLASH?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {safeToAbort ? (
+                <>No bytes have been written yet. Aborting now is safe — the scooter will be untouched.</>
+              ) : (
+                <>
+                  <span className="text-destructive font-semibold">
+                    Flashing is in progress. Aborting NOW will leave your scooter with partial firmware
+                    and it will not boot until reflashed.
+                  </span>{" "}
+                  Only abort if you have no choice.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep flashing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmAbort}
+              className={cn(
+                "mono",
+                safeToAbort
+                  ? "bg-warning text-warning-foreground"
+                  : "bg-destructive text-destructive-foreground"
+              )}
+            >
+              {safeToAbort ? "ABORT SAFELY" : "ABORT ANYWAY"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -392,14 +602,91 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h2 className="mono text-xs tracking-[0.2em] uppercase text-muted-foreground">{children}</h2>;
 }
 
-function Check2({ ok, label, value }: { ok: boolean; label: string; value: string }) {
+function Check2({ ok, label, value, icon }: { ok: boolean; label: string; value: string; icon?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
       <div className="flex items-center gap-2">
-        {ok ? <ShieldCheck className="w-4 h-4 text-primary-glow" /> : <X className="w-4 h-4 text-destructive" />}
+        {icon ?? (ok ? <ShieldCheck className="w-4 h-4 text-primary-glow" /> : <X className="w-4 h-4 text-destructive" />)}
         <div className="text-sm">{label}</div>
       </div>
       <div className={cn("mono text-xs", ok ? "text-primary-glow" : "text-destructive")}>{value}</div>
+    </div>
+  );
+}
+
+function Mini({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div className={cn("rounded-md border p-2", warn ? "border-destructive/50 bg-destructive/5" : "border-border")}>
+      <div className="mono text-[9px] tracking-widest text-muted-foreground">{label}</div>
+      <div className={cn("mono text-sm mt-0.5", warn ? "text-destructive" : "text-primary-glow")}>{value}</div>
+    </div>
+  );
+}
+
+function ResultCard({
+  result, target, error, onDone,
+}: {
+  result: "success" | "error" | "aborted-safe" | "aborted-unsafe" | null;
+  target: Target;
+  error: string;
+  onDone: () => void;
+}) {
+  if (result === "success") {
+    return (
+      <div className="panel-glow p-6 flex flex-col items-center text-center">
+        <div className="w-14 h-14 rounded-full bg-gradient-mint flex items-center justify-center mb-3 pulse-ring">
+          <Check className="w-7 h-7 text-primary-foreground" />
+        </div>
+        <div className="mono text-lg tracking-widest text-primary-glow">FLASH OK</div>
+        <p className="text-sm text-muted-foreground mt-2">
+          {target} on your scooter is now running new firmware. Power-cycle the scooter to fully apply.
+        </p>
+        <Button onClick={onDone} className="mt-5 mono tracking-widest">DONE</Button>
+      </div>
+    );
+  }
+  if (result === "aborted-safe") {
+    return (
+      <div className="panel-glow p-6 flex flex-col items-center text-center border-warning/50 shadow-none">
+        <div className="w-14 h-14 rounded-full bg-warning/20 border border-warning flex items-center justify-center mb-3">
+          <Square className="w-7 h-7 text-warning" />
+        </div>
+        <div className="mono text-lg tracking-widest text-warning">ABORTED — SAFE</div>
+        <p className="text-sm text-muted-foreground mt-2">
+          No data was written to the scooter. {error && <span className="block mt-1 text-xs">Reason: {error}</span>}
+        </p>
+        <Button onClick={onDone} className="mt-5 mono tracking-widest">DONE</Button>
+      </div>
+    );
+  }
+  if (result === "aborted-unsafe") {
+    return (
+      <div className="panel-glow p-6 flex flex-col items-center text-center border-destructive/60 shadow-none">
+        <div className="w-14 h-14 rounded-full bg-destructive/20 border border-destructive flex items-center justify-center mb-3">
+          <AlertTriangle className="w-7 h-7 text-destructive" />
+        </div>
+        <div className="mono text-lg tracking-widest text-destructive">PARTIAL FLASH</div>
+        <p className="text-sm text-muted-foreground mt-2">
+          The flash was interrupted mid-write. <span className="text-destructive font-semibold">Do NOT power off the scooter.</span>{" "}
+          Stay connected and reflash {target} immediately.
+        </p>
+        {error && <p className="text-[11px] text-muted-foreground mt-2">Reason: {error}</p>}
+        <Button onClick={onDone} className="mt-5 mono tracking-widest">REFLASH</Button>
+      </div>
+    );
+  }
+  // error
+  return (
+    <div className="panel-glow p-6 flex flex-col items-center text-center border-destructive/50 shadow-none">
+      <div className="w-14 h-14 rounded-full bg-destructive/20 border border-destructive flex items-center justify-center mb-3">
+        <X className="w-7 h-7 text-destructive" />
+      </div>
+      <div className="mono text-lg tracking-widest text-destructive">FLASH FAILED</div>
+      <p className="text-sm text-muted-foreground mt-2">
+        Don't power off. Reconnect and retry the flash to recover the scooter.
+      </p>
+      {error && <p className="text-[11px] text-muted-foreground mt-2">Reason: {error}</p>}
+      <Button onClick={onDone} className="mt-5 mono tracking-widest">DONE</Button>
     </div>
   );
 }
