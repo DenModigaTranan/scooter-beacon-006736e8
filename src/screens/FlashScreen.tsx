@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { FlashStepList, type Phase, type PhaseId, type PhaseState } from "@/components/FlashStepList";
 import { FlashLogConsole } from "@/components/FlashLogConsole";
 import { formatBytes, formatDuration, formatRate } from "@/lib/format";
+import { recordPairedFlash } from "@/lib/paired-profiles";
 
 type Target = "DRV" | "BMS" | "BLE";
 type Step = 1 | 2 | 3 | 4 | 5;
