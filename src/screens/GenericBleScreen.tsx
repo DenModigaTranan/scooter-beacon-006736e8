@@ -109,6 +109,30 @@ export function GenericBleScreen() {
   const [connectPhase, setConnectPhase] = useState<ConnectPhase>({ kind: "idle" });
   // Tick clock so the banner countdown re-renders every ~250ms while connecting.
   const [now, setNow] = useState(() => Date.now());
+  // User-visible connection log. Newest entry first; capped at LOG_MAX_ENTRIES.
+  const [log, setLog] = useState<LogEntry[]>([]);
+  // Monotonic id generator for log entries — survives re-renders.
+  const logIdRef = useRef(0);
+
+  /**
+   * Append an entry to the connection log. Stable identity via useCallback so
+   * it can be safely depended on inside other callbacks. New entries go to
+   * the front so the panel reads top-down (most recent first).
+   */
+  const pushLog = useCallback((kind: LogKind, message: string) => {
+    setLog((prev) => {
+      const next: LogEntry = {
+        id: ++logIdRef.current,
+        at: Date.now(),
+        kind,
+        message,
+      };
+      const out = [next, ...prev];
+      return out.length > LOG_MAX_ENTRIES ? out.slice(0, LOG_MAX_ENTRIES) : out;
+    });
+  }, []);
+
+  const clearLog = useCallback(() => setLog([]), []);
 
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
