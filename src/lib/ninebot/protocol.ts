@@ -65,8 +65,12 @@ export const NB = {
     MODE: 0x75,
     /** u32 LE, units 0.01 km. */
     ODOMETER: 0x29,
-    /** u8 — 0=unlocked, 1=locked. */
+    /** u8 — 0=unlocked, 1=locked. Read- AND write-able (lock command). */
     LOCK: 0x70,
+    /** u8 — 0=off, 1=on. Headlight toggle. */
+    LIGHTS: 0x69,
+    /** u8 — write 0x01 to trigger a one-shot horn beep. */
+    BEEP: 0x88,
   },
 } as const;
 
