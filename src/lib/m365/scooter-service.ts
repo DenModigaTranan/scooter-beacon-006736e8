@@ -511,7 +511,12 @@ export class ScooterService {
     if (!isNative()) return;
     if (!this.connectedId) throw new Error("not connected");
     const view = new DataView(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-    await BleClient.write(this.connectedId, M365.SERVICE, M365.CHAR_RX, view);
+    const { service, rx, rxWriteWithoutResponse } = this.resolvedGatt;
+    if (rxWriteWithoutResponse) {
+      await BleClient.writeWithoutResponse(this.connectedId, service, rx, view);
+    } else {
+      await BleClient.write(this.connectedId, service, rx, view);
+    }
   }
 
   // ──────────────── High-level operations ────────────────
