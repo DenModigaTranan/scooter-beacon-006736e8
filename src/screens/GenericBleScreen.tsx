@@ -785,6 +785,7 @@ function FailureSummaryChip({
 }
 
 
+function ConnectionLogPanel({
   entries, onClear, now,
 }: {
   entries: LogEntry[];
