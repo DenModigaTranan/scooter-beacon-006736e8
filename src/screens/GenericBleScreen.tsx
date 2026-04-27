@@ -865,6 +865,9 @@ export function GenericBleScreen() {
                             deviceId={connectedDevice?.deviceId ?? ""}
                             serviceUuid={s.uuid}
                             char={c}
+                            modelAllowsRead={allowsRead}
+                            modelAllowsWrite={allowsWrite}
+                            modelLabel={activeModel?.shortLabel ?? null}
                           />
                         </li>
                       ))}
