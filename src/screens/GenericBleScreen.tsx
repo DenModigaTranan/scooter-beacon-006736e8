@@ -714,6 +714,11 @@ export function GenericBleScreen() {
         now={now}
         canRetry={!!connectedDevice && connState !== "connecting"}
         onRetry={() => connectedDevice && connect(connectedDevice)}
+        retryInSec={
+          connectPhase.kind === "backoff"
+            ? Math.max(0, Math.ceil((connectPhase.resumeAt - now) / 1000))
+            : null
+        }
       />
 
       {/* Connection log — small expandable panel of timestamped events */}
