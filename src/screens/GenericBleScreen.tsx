@@ -562,12 +562,17 @@ export function GenericBleScreen() {
     if (log.length === 0) return null;
     let lastFail: LogEntry | null = null;
     let lastSummary: LogEntry | null = null;
+    // Every attempt-fail/timeout entry from the current run, ordered
+    // chronologically (oldest first) so the drawer reads top-down like a
+    // post-mortem.
+    const runFailures: LogEntry[] = [];
     for (const e of log) {
       // Newest-first iteration; stop as soon as we hit a sequence boundary
       // ("info" = "Connect requested" begins a new run).
       if (e.kind === "info" && e.message.startsWith("Connect requested")) break;
       if (!lastSummary && e.kind === "summary") lastSummary = e;
       if (!lastFail && (e.kind === "attempt-fail" || e.kind === "timeout")) lastFail = e;
+      if (e.kind === "attempt-fail" || e.kind === "timeout") runFailures.unshift(e);
     }
     if (!lastFail) return null;
     // If the run ended in success, don't surface the prior failure — the
@@ -591,7 +596,7 @@ export function GenericBleScreen() {
     const totalLabel = lastSummary
       ? lastSummary.message.match(/after\s+([0-9.]+(?:ms|s))/i)?.[1] ?? null
       : null;
-    return { entry: lastFail, attempt, reason, isTimeout, totalLabel, ended: !!lastSummary };
+    return { entry: lastFail, attempt, reason, isTimeout, totalLabel, ended: !!lastSummary, failures: runFailures };
   }, [log]);
 
   return (
