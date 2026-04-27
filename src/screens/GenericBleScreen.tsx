@@ -1173,16 +1173,34 @@ function FailureSummaryChip({
                     waiting before the next attempt. Ticks via the parent's
                     1Hz `now` clock that already drives the connect banner. */}
                 {!ended && retryInSec !== null && (
-                  <span
-                    className={cn(
-                      "mono text-[10px] ml-1.5 px-1.5 py-px rounded border border-current/30 align-middle inline-flex items-center gap-1",
-                      tone.icon,
-                    )}
-                    aria-live="polite"
-                  >
-                    <Clock className="w-2.5 h-2.5" aria-hidden />
-                    {retryInSec > 0 ? `Retrying in ${retryInSec}s` : "Retrying…"}
-                  </span>
+                  <>
+                    <span
+                      className={cn(
+                        "mono text-[10px] ml-1.5 px-1.5 py-px rounded border border-current/30 align-middle inline-flex items-center gap-1",
+                        tone.icon,
+                      )}
+                      aria-live="polite"
+                    >
+                      <Clock className="w-2.5 h-2.5" aria-hidden />
+                      {retryInSec > 0 ? `Retrying in ${retryInSec}s` : "Retrying…"}
+                    </span>
+                    {/* Inline cancel — aborts the orchestrator's connect
+                        sequence (including the pending backoff wait) so the
+                        user can stop the loop without scrolling to the
+                        status banner's Cancel button. */}
+                    <button
+                      type="button"
+                      onClick={onCancelRetry}
+                      title="Stop the auto-retry loop"
+                      className={cn(
+                        "mono text-[10px] ml-1 px-1.5 py-px rounded border border-current/30 align-middle inline-flex items-center gap-1 transition-colors hover:bg-foreground/[0.06]",
+                        tone.icon,
+                      )}
+                    >
+                      <X className="w-2.5 h-2.5" aria-hidden />
+                      Cancel retry
+                    </button>
+                  </>
                 )}
               </span>
             </div>
