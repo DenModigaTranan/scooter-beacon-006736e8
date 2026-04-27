@@ -251,9 +251,19 @@ export function GenericBleScreen() {
         let settled = false;
         const finish = (fn: () => void) => { if (!settled) { settled = true; fn(); } };
 
+        // Captured at the moment we kick off the plugin call so the duration
+        // reported in log entries reflects the real wall-clock attempt time,
+        // not when React eventually scheduled the log push.
+        const startedAt = Date.now();
+        const elapsed = () => Date.now() - startedAt;
+        const cap = formatMs(PER_ATTEMPT_TIMEOUT_MS);
+
         const timeoutId = setTimeout(() => {
           finish(() => reject(new Error(`timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`)));
-          pushLog("timeout", `Attempt ${attempt} timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`);
+          pushLog(
+            "timeout",
+            `Attempt ${attempt} hit timeout (${formatMs(elapsed())} / cap ${cap})`,
+          );
           // Best-effort cleanup so the next attempt starts clean.
           genericBle.disconnect().catch(() => {});
         }, PER_ATTEMPT_TIMEOUT_MS);
@@ -268,9 +278,12 @@ export function GenericBleScreen() {
         setConnectPhase({
           kind: "connecting",
           attempt,
-          deadlineAt: Date.now() + PER_ATTEMPT_TIMEOUT_MS,
+          deadlineAt: startedAt + PER_ATTEMPT_TIMEOUT_MS,
         });
-        pushLog("attempt-start", `Attempt ${attempt}/${MAX_ATTEMPTS} started`);
+        pushLog(
+          "attempt-start",
+          `Attempt ${attempt}/${MAX_ATTEMPTS} started (timeout ${cap})`,
+        );
 
         genericBle.connect(d.deviceId, () => {
           // Peer-initiated disconnect AFTER we resolved → propagate to UI.
@@ -281,18 +294,28 @@ export function GenericBleScreen() {
             setConnectedDevice(null);
             setServices([]);
           } else {
-            finish(() => reject(new Error("disconnected before GATT ready")));
+            finish(() => reject(new Error(`disconnected before GATT ready (after ${formatMs(elapsed())})`)));
           }
         }).then(
           () => {
+            const took = elapsed();
             clearTimeout(timeoutId);
             ac.signal.removeEventListener("abort", onAbort);
             finish(() => resolve());
+            pushLog(
+              "attempt-ok",
+              `Attempt ${attempt} succeeded — link up in ${formatMs(took)} (cap ${cap})`,
+            );
           },
           (err) => {
+            const took = elapsed();
             clearTimeout(timeoutId);
             ac.signal.removeEventListener("abort", onAbort);
-            finish(() => reject(err instanceof Error ? err : new Error(String(err))));
+            const e = err instanceof Error ? err : new Error(String(err));
+            // Annotate the rejection with timing so the outer loop can render
+            // a uniform "took Xs" tail in the FAIL log entry.
+            (e as Error & { tookMs?: number }).tookMs = took;
+            finish(() => reject(e));
           },
         );
       });
@@ -320,14 +343,17 @@ export function GenericBleScreen() {
         try {
           await attemptOnce(attempt);
           lastError = null;
-          pushLog("attempt-ok", `Attempt ${attempt} succeeded — link up`);
+          // Success log already pushed from inside attemptOnce so it carries
+          // the precise wall-clock duration instead of "after the await".
           break;
         } catch (e) {
           lastError = e instanceof Error ? e : new Error(String(e));
           if (lastError.message === "cancelled") throw lastError;
           // Avoid double-logging the timeout (already logged inside attemptOnce).
           if (!lastError.message.startsWith("timed out")) {
-            pushLog("attempt-fail", `Attempt ${attempt} failed: ${lastError.message}`);
+            const tookMs = (lastError as Error & { tookMs?: number }).tookMs;
+            const tail = tookMs !== undefined ? ` (took ${formatMs(tookMs)})` : "";
+            pushLog("attempt-fail", `Attempt ${attempt} failed${tail}: ${lastError.message}`);
           }
           if (attempt >= MAX_ATTEMPTS) throw lastError;
           const delay = BACKOFFS_MS[Math.min(attempt - 1, BACKOFFS_MS.length - 1)];
@@ -338,7 +364,7 @@ export function GenericBleScreen() {
             resumeAt,
             lastError: lastError.message,
           });
-          pushLog("backoff", `Backoff ${delay}ms before attempt ${attempt + 1}`);
+          pushLog("backoff", `Backoff ${formatMs(delay)} before attempt ${attempt + 1}`);
           await sleepOrAbort(delay, resumeAt);
           if (aborted()) throw new Error("cancelled");
         }
@@ -724,9 +750,15 @@ function formatRelative(ts: number, now: number): string {
   return `${hr}h ago`;
 }
 
-// ============================================================================
-// Sub-components
-// ============================================================================
+/**
+ * Compact ms → "Xms" / "X.Ys" formatter for log entries. Sub-second values
+ * stay in ms for precision on fast handshakes; anything ≥1s collapses to one
+ * decimal so "Attempt 2 took 7.6s" reads naturally.
+ */
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
 
 function ScanStateChip({ state, count }: { state: ScanState; count: number }) {
