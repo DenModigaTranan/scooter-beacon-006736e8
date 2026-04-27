@@ -637,15 +637,23 @@ export function FlashScreen() {
               result={flashResult}
               target={target}
               error={flashError}
+              elapsedMs={
+                startedAtRef.current
+                  ? (finishedAtRef.current ?? Date.now()) - startedAtRef.current
+                  : 0
+              }
+              bytesWritten={bytesWritten}
+              totalBytes={totalBytes}
               onDone={reset}
             />
-            <div className="panel mt-3 p-3">
-              <div className="mono text-[10px] text-muted-foreground tracking-widest mb-2">CONSOLE</div>
-              <ScrollArea className="h-32">
-                <pre className="mono text-[11px] leading-relaxed text-primary-glow whitespace-pre-wrap">
-                  {flashLog.join("\n")}
-                </pre>
-              </ScrollArea>
+
+            {/* Final phase summary so the user can see exactly which step failed. */}
+            <div className="mt-3">
+              <FlashStepList phases={phases} />
+            </div>
+
+            <div className="mt-3">
+              <FlashLogConsole lines={flashLog} height="h-32" follow={false} />
             </div>
           </motion.div>
         )}
