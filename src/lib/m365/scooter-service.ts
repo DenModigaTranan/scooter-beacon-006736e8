@@ -113,6 +113,19 @@ export interface HandshakeResult {
   reason: string;
   /** ISO timestamp of when the handshake completed. */
   at: string;
+  /**
+   * True when the strict M365 GATT layout was not found and the service
+   * resolved against a community-known clone variant instead. The flash
+   * flow MUST surface an extra acknowledgement before allowing writes
+   * because clone protocol behaviour is best-effort.
+   */
+  cloneMode: boolean;
+  /** Identifier of the resolved variant from `M365.HANDSHAKE.FALLBACKS`. */
+  variantId: string | null;
+  /** Resolved GATT triple actually used by reads, writes and notifications. */
+  resolved: { service: string; rx: string; tx: string } | null;
+  /** Non-fatal warnings (e.g. "writeWithoutResponse only"). */
+  warnings: string[];
 }
 
 const isNative = () => Capacitor.isNativePlatform();
