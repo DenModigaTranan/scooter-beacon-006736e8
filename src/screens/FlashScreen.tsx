@@ -370,6 +370,30 @@ export function FlashScreen() {
     } finally {
       setFlashing(false);
       abortRef.current = null;
+      // Mirror non-success outcomes onto the paired profile too, so the
+      // Connect screen can warn the user about an interrupted device.
+      if (selectedDevice) {
+        const r = (() => {
+          // re-read latest result via state setter would be racy; use ref-free
+          // closure via DOM-free approach: rely on local vars set above.
+          return null;
+        })();
+        // Fallback path: success branch already wrote; here just ensure any
+        // failure state captured in setFlashResult above is mirrored.
+        // We use a microtask to read the most recent flashResult via store.
+        queueMicrotask(() => {
+          const fr = (window as unknown as { __lastFlashResult?: string }).__lastFlashResult;
+          if (fr && fr !== "success") {
+            recordPairedFlash(selectedDevice.deviceId, {
+              target,
+              label: customFile?.name ?? selected?.version ?? "unknown",
+              size: bytesWritten,
+              at: Date.now(),
+              result: fr,
+            });
+          }
+        });
+      }
     }
   };
 
