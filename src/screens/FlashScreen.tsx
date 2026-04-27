@@ -574,20 +574,33 @@ export function FlashScreen() {
         {step === 4 && (
           <motion.div key="s4" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
             <SectionTitle>4. Flashing {target}…</SectionTitle>
+
+            {/* Headline progress: % + bytes + elapsed/rate/ETA */}
             <div className="panel-glow scanline p-5 mt-3">
               <div className="flex items-end justify-between mb-2">
                 <div className="readout text-4xl">{Math.round(progress * 100)}%</div>
-                <div className="mono text-[10px] text-muted-foreground tracking-widest">
-                  {(bytesWritten / 1024).toFixed(1)} / {(totalBytes / 1024).toFixed(1)} KB
+                <div className="text-right">
+                  <div className="mono text-[10px] text-muted-foreground tracking-widest">
+                    {formatBytes(bytesWritten)} / {formatBytes(totalBytes)}
+                  </div>
+                  <div className="mono text-[10px] text-muted-foreground tracking-widest mt-0.5">
+                    {formatRate(liveStats.rate)}
+                    {liveStats.etaMs > 0 && phaseStates.write === "active" && ` · ETA ${formatDuration(liveStats.etaMs)}`}
+                  </div>
                 </div>
               </div>
               <Progress value={progress * 100} className="h-2" />
               <div className="mt-1 flex items-center justify-between mono text-[10px] text-muted-foreground">
-                <span>{flashStatus.toUpperCase()}</span>
+                <span>{flashStatus.toUpperCase()} · {formatDuration(liveStats.elapsedMs)}</span>
                 <span className={safeToAbort ? "text-primary-glow" : "text-warning"}>
                   {safeToAbort ? "SAFE TO ABORT" : "DO NOT POWER OFF"}
                 </span>
               </div>
+            </div>
+
+            {/* Per-step checklist */}
+            <div className="mt-3">
+              <FlashStepList phases={phases} />
             </div>
 
             {/* Live safety strip — re-renders every telemetry tick. */}
@@ -612,13 +625,8 @@ export function FlashScreen() {
               {safeToAbort ? "ABORT (SAFE)" : "ABORT (UNSAFE)"}
             </Button>
 
-            <div className="panel mt-3 p-3">
-              <div className="mono text-[10px] text-muted-foreground tracking-widest mb-2">CONSOLE</div>
-              <ScrollArea className="h-44">
-                <pre className="mono text-[11px] leading-relaxed text-primary-glow whitespace-pre-wrap">
-                  {flashLog.join("\n") || "(waiting…)"}
-                </pre>
-              </ScrollArea>
+            <div className="mt-3">
+              <FlashLogConsole lines={flashLog} height="h-44" />
             </div>
           </motion.div>
         )}
