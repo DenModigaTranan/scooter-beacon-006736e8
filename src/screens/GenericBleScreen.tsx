@@ -766,6 +766,7 @@ function ConnectionLogPanel({
     "cancel":        { label: "CANCEL",   cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
     "disconnect":    { label: "DISC",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
     "info":          { label: "INFO",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+    "summary":       { label: "SUMMARY",  cls: "text-foreground",        dot: "bg-foreground/70" },
   };
 
   return (
