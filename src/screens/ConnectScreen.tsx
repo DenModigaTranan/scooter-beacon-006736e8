@@ -41,6 +41,14 @@ export function ConnectScreen() {
             )}
           </div>
 
+          <PairedScooters
+            busy={state === "connecting" || state === "scanning"}
+            connectingId={state === "connecting" ? selected?.deviceId ?? null : null}
+            onReconnect={(deviceId, name) =>
+              connect({ deviceId, name, rssi: -127 })
+            }
+          />
+
           <div className="flex items-center justify-between mb-3">
             <div className="mono text-[11px] tracking-[0.22em] uppercase text-muted-foreground">Nearby</div>
             <div className="flex items-center gap-2">
