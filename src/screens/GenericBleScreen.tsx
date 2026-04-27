@@ -2272,8 +2272,16 @@ function CharacteristicRow({
         {canRead && (
           <button
             onClick={onRead}
-            disabled={busy !== null}
-            className="chip text-[9px] tracking-widest text-primary-glow hover:bg-primary/15 inline-flex items-center gap-1 disabled:opacity-50"
+            disabled={busy !== null || modelBlocksRead}
+            title={
+              modelBlocksRead
+                ? `Read commands are not supported by ${modelLabel ?? "the active model"}.`
+                : undefined
+            }
+            className={cn(
+              "chip text-[9px] tracking-widest text-primary-glow hover:bg-primary/15 inline-flex items-center gap-1 disabled:opacity-50",
+              modelBlocksRead && "cursor-not-allowed",
+            )}
           >
             {busy === "read"
               ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
@@ -2284,8 +2292,16 @@ function CharacteristicRow({
         {canWrite && (
           <button
             onClick={() => { setWriteOpen((o) => !o); setError(null); }}
-            disabled={busy !== null}
-            className="chip text-[9px] tracking-widest text-primary-glow hover:bg-primary/15 inline-flex items-center gap-1 disabled:opacity-50"
+            disabled={busy !== null || modelBlocksWrite}
+            title={
+              modelBlocksWrite
+                ? `Write commands are not supported by ${modelLabel ?? "the active model"}.`
+                : undefined
+            }
+            className={cn(
+              "chip text-[9px] tracking-widest text-primary-glow hover:bg-primary/15 inline-flex items-center gap-1 disabled:opacity-50",
+              modelBlocksWrite && "cursor-not-allowed",
+            )}
           >
             <Upload className="w-2.5 h-2.5" />
             WRITE{writeAcked ? "" : "-NR"}
