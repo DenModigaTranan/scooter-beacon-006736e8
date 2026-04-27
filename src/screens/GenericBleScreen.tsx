@@ -1133,6 +1133,52 @@ function ScanStateChip({ state, count }: { state: ScanState; count: number }) {
   );
 }
 
+/**
+ * Compact "attempt X of N" progress strip rendered inside the connecting
+ * banner. Each tile maps 1:1 to a configured attempt slot and recolors as
+ * the orchestrator transitions that attempt through active → ok / failed /
+ * timeout. Designed to be glanceable: no labels per tile, just color + a
+ * subtle pulse on the in-flight one. The summary text above already carries
+ * the precise "attempt N/MAX" wording for assistive tech, so this strip is
+ * purely visual reinforcement (aria-hidden).
+ */
+function AttemptProgressStrip({
+  outcomes,
+  currentAttempt,
+}: {
+  outcomes: AttemptOutcome[];
+  currentAttempt: number;
+}) {
+  if (!outcomes.length) return null;
+  return (
+    <div
+      className="mt-2 flex items-center gap-1"
+      aria-hidden="true"
+    >
+      {outcomes.map((o, i) => {
+        const attemptNum = i + 1;
+        const isCurrent = attemptNum === currentAttempt;
+        // Map outcome → tile color. Pending tiles are intentionally low
+        // contrast so the eye is drawn to the active/finished ones.
+        const cls =
+          o === "ok"      ? "bg-primary-glow"
+          : o === "failed"  ? "bg-destructive/80"
+          : o === "timeout" ? "bg-warning"
+          : o === "active"  ? "bg-primary-glow/70 animate-pulse"
+          : isCurrent       ? "bg-secondary-foreground/30"
+          :                   "bg-secondary";
+        return (
+          <div
+            key={attemptNum}
+            className={cn("h-1.5 flex-1 rounded-full transition-colors", cls)}
+            title={`Attempt ${attemptNum}: ${o}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function ConnStatusBanner({
   connState, device, error, phase, now, attemptOutcomes, onDisconnect, onCancel, onRetry,
 }: {
