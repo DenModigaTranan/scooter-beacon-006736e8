@@ -1264,13 +1264,14 @@ function FailureSummaryChip({
                 <button
                   type="button"
                   onClick={handleRetryClick}
-                  title={
+                  title={[
                     requireConfirm
                       ? retryArmed
                         ? "Click again to confirm — auto-cancels in a few seconds"
                         : "Click to arm; a second click will start a fresh connect sequence"
-                      : "Start a fresh connect sequence"
-                  }
+                      : "Start a fresh connect sequence",
+                    `Context: ${retryContext}`,
+                  ].join("\n")}
                   aria-pressed={retryArmed}
                   className={cn(
                     "mono text-[9px] tracking-widest uppercase inline-flex items-center gap-1 px-2 py-1 rounded transition-colors shrink-0",
