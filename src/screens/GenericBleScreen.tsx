@@ -758,6 +758,7 @@ export function GenericBleScreen() {
             : null
         }
         onCancelRetry={cancelConnect}
+        retryContext={describeRetryContext(connectPhase, connState)}
       />
 
       {/* Connection log — small expandable panel of timestamped events */}
