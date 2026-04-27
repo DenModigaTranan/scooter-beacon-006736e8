@@ -240,6 +240,22 @@ export function GenericBleScreen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [devices, setDevices] = useState<GenericDevice[]>([]);
   const [filter, setFilter] = useState("");
+  // User-selected target model. "auto" means "trust whatever the registry's
+  // detector resolves from each advertisement"; any other value pins the
+  // expected model so the UI can warn (and gate the Connect button) when
+  // the device doesn't match. Persisted in localStorage so a debugging
+  // session survives reloads — the value is just a string id from the
+  // models registry, safe to round-trip.
+  const MODEL_PREF_KEY = "ble.targetModelId";
+  const [targetModelId, setTargetModelId] = useState<string>(() => {
+    if (typeof window === "undefined") return "auto";
+    return window.localStorage.getItem(MODEL_PREF_KEY) || "auto";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(MODEL_PREF_KEY, targetModelId);
+  }, [targetModelId]);
+  const targetModel = targetModelId === "auto" ? null : getNinebotModelById(targetModelId);
 
   const [connState, setConnState] = useState<ConnState>("disconnected");
   const [connError, setConnError] = useState<string | null>(null);
