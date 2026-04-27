@@ -118,6 +118,24 @@ export function GenericBleScreen() {
   const [connectPhase, setConnectPhase] = useState<ConnectPhase>({ kind: "idle" });
   // Tick clock so the banner countdown re-renders every ~250ms while connecting.
   const [now, setNow] = useState(() => Date.now());
+  // Fixed-length progress strip rendered in the connect banner. Index i is the
+  // outcome of attempt i+1. Reset to all-"pending" at the start of every new
+  // connect sequence; mutated in place as attempts start/finish.
+  const [attemptOutcomes, setAttemptOutcomes] = useState<AttemptOutcome[]>(
+    () => Array.from({ length: MAX_ATTEMPTS }, () => "pending" as const),
+  );
+  const setAttemptOutcome = useCallback(
+    (attempt: number, outcome: AttemptOutcome) => {
+      setAttemptOutcomes((prev) => {
+        const idx = attempt - 1;
+        if (idx < 0 || idx >= prev.length || prev[idx] === outcome) return prev;
+        const next = prev.slice();
+        next[idx] = outcome;
+        return next;
+      });
+    },
+    [],
+  );
   // User-visible connection log. Newest entry first; capped at LOG_MAX_ENTRIES.
   const [log, setLog] = useState<LogEntry[]>([]);
   // Monotonic id generator for log entries — survives re-renders.
