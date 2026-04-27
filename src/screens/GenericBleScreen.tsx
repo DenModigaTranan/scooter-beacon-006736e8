@@ -831,10 +831,6 @@ function FailureSummaryChip({
     : ageSec < 60 ? `${ageSec}s ago`
     : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m ago`
     : `${Math.floor(ageSec / 3600)}h ago`;
-  // Only offer the drawer when there's actually something extra to show.
-  // For a single-failure run the chip already says everything; expanding
-  // would just repeat the same line.
-  const hasDrawer = failures.length > 1 || (failures.length === 1 && failures[0].id !== entry.id);
   // Show the chevron whenever there is at least one failure entry — even a
   // single one is useful in the drawer because it carries the raw timestamp
   // and unstripped message for bug reports.
