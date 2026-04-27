@@ -154,6 +154,17 @@ export class ScooterService {
   private mockSerial = "16133/00012345";
   /** Latest handshake outcome. `null` until handshake() runs after a connect. */
   private lastHandshake: HandshakeResult | null = null;
+  /**
+   * GATT triple actually in use for I/O. Set by `handshake()` once a variant
+   * (strict or clone) resolves. Until then, write/notify operations fall back
+   * to the strict M365 UUIDs so the initial subscription can be set up.
+   */
+  private resolvedGatt: { service: string; rx: string; tx: string; rxWriteWithoutResponse: boolean } = {
+    service: M365.SERVICE,
+    rx: M365.CHAR_RX,
+    tx: M365.CHAR_TX,
+    rxWriteWithoutResponse: false,
+  };
   private mockTelemetry: Telemetry = {
     speedKph: 0,
     batteryPct: 78,
