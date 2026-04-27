@@ -69,6 +69,19 @@ interface MockChar {
   tick?: (prev: Uint8Array) => Uint8Array;
   /** Pretty-print hint surfaced on the UI. */
   hint?: "utf8" | "uint8" | "uint16le" | "hex";
+  /**
+   * Optional request/response hook. Invoked when the central writes to
+   * this characteristic. Use the `pushNotify` callback to push reply
+   * frames out of any sibling `notify` characteristic on the same mock
+   * peripheral — this is how the Ninebot RX→TX request/response shape
+   * is emulated without needing real BLE round-trips.
+   */
+  onWrite?: (
+    value: Uint8Array,
+    ctx: {
+      pushNotify: (charUuid: string, bytes: Uint8Array) => void;
+    },
+  ) => void;
 }
 
 interface MockService {
