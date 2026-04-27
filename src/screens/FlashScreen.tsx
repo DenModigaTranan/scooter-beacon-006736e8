@@ -247,12 +247,34 @@ export function FlashScreen() {
             <SectionTitle>3. Pre-flight checks</SectionTitle>
 
             <div className="panel p-4 mt-3 space-y-1">
+              <Check2
+                ok={checks.handshakeOk}
+                label="BLE protocol handshake"
+                value={handshake ? (handshake.ok ? "validated" : handshake.reason) : "pending"}
+              />
               <Check2 ok={checks.battery} label={`Scooter battery ≥ 50%`} value={`${Math.round(telemetry?.batteryPct ?? 0)}%`} />
               <Check2 ok={checks.moving} label="Scooter stationary" value={`${(telemetry?.speedKph ?? 0).toFixed(1)} km/h`} />
               <Check2 ok={checks.phone} label="Phone battery ≥ 30%" value="ok" />
               <Check2 ok={checks.fwOk} label="Firmware selected" value={selected?.version ?? customFile?.name ?? "—"} />
               <Check2 ok={!!info} label={`${target} version detected`} value={info ? (target === "DRV" ? info.drvVersion : target === "BMS" ? info.bmsVersion : info.bleVersion) : "—"} />
             </div>
+
+            {!checks.handshakeOk && (
+              <div className="panel mt-3 p-3 border-destructive/40 flex items-center justify-between gap-3">
+                <div className="text-xs text-muted-foreground leading-relaxed">
+                  Flashing is disabled until the device passes the M365 GATT handshake.
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onRetryHandshake}
+                  disabled={retryingHandshake}
+                  className="mono shrink-0"
+                >
+                  {retryingHandshake ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "RETRY"}
+                </Button>
+              </div>
+            )}
 
             <div className="panel mt-3 p-4 border-warning/40">
               <div className="flex items-center gap-2 mb-2">
