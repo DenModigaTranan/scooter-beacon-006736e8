@@ -43,6 +43,7 @@ export function useScooter() {
         store.setInfo(null);
         store.setTelemetry(null);
         store.setHandshake(null);
+        store.setExtendedInfo(null);
       });
       await haptic(ImpactStyle.Medium);
       store.setState("connected");
@@ -82,6 +83,7 @@ export function useScooter() {
     store.setInfo(null);
     store.setTelemetry(null);
     store.setHandshake(null);
+    store.setExtendedInfo(null);
   }, [store]);
 
   const writeSerialAndVerify = useCallback(async (s: string, maxAttempts = 1) => {
@@ -105,6 +107,18 @@ export function useScooter() {
     return hs;
   }, [store]);
 
+  /**
+   * Read the extended identifier set (model id, COC, BLE/BMS hw versions,
+   * BMS health & cycles, last error code) and stash it in the store.
+   * Returns the snapshot so callers can also display it inline.
+   */
+  const refreshExtendedInfo = useCallback(async () => {
+    const selected = useScooterStore.getState().selected;
+    const ext = await scooter.readExtendedInfo(selected?.deviceId);
+    store.setExtendedInfo(ext);
+    return ext;
+  }, [store]);
+
   return {
     ...store,
     scan,
@@ -113,6 +127,7 @@ export function useScooter() {
     writeSerialAndVerify,
     refreshInfo,
     rerunHandshake,
+    refreshExtendedInfo,
     isNative: Capacitor.isNativePlatform(),
   };
 }

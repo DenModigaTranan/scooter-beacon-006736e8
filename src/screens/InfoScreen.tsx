@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { Copy, Check, ShieldAlert, PenLine, Loader2, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import {
+  Copy, Check, ShieldAlert, PenLine, Loader2, CheckCircle2, XCircle,
+  RefreshCw, Cpu, AlertTriangle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScooter } from "@/hooks/use-scooter";
@@ -14,7 +17,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { VerifyResult } from "@/lib/m365/scooter-service";
+import type { VerifyResult, ExtendedDeviceInfo } from "@/lib/m365/scooter-service";
+import { cn } from "@/lib/utils";
 
 function Row({ label, value, copyable = true }: { label: string; value?: string; copyable?: boolean }) {
   const [copied, setCopied] = useState(false);
@@ -46,7 +50,7 @@ function Row({ label, value, copyable = true }: { label: string; value?: string;
 type Step = "confirm" | "writing" | "verifying" | "verified" | "mismatch";
 
 export function InfoScreen() {
-  const { info, writeSerialAndVerify, refreshInfo, selected } = useScooter();
+  const { info, writeSerialAndVerify, refreshInfo, refreshExtendedInfo, extendedInfo, selected } = useScooter();
   const [editingSerial, setEditingSerial] = useState(false);
   const [newSerial, setNewSerial] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -55,6 +59,44 @@ export function InfoScreen() {
   const [attempt, setAttempt] = useState(0);
   const [lastResult, setLastResult] = useState<VerifyResult | null>(null);
   const MAX_ATTEMPTS = 3;
+
+  const [loadingExtras, setLoadingExtras] = useState(false);
+  const [extrasError, setExtrasError] = useState<string | null>(null);
+
+  // Auto-load extras the first time the screen mounts so the panel isn't
+  // empty. Subsequent loads are user-triggered via the refresh button.
+  useEffect(() => {
+    if (extendedInfo) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingExtras(true);
+      setExtrasError(null);
+      try {
+        await refreshExtendedInfo();
+      } catch (e) {
+        if (!cancelled) setExtrasError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoadingExtras(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onRefreshExtras = async () => {
+    setLoadingExtras(true);
+    setExtrasError(null);
+    try {
+      await refreshExtendedInfo();
+      toast.success("Identifiers refreshed");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setExtrasError(msg);
+      toast.error("Refresh failed");
+    } finally {
+      setLoadingExtras(false);
+    }
+  };
 
   // Reset step machine when dialog closes
   useEffect(() => {
@@ -144,6 +186,14 @@ export function InfoScreen() {
         <Row label="Manufacture date" value={info?.manufactureDate} />
         <Row label="Total mileage" value={info ? `${info.totalMileageKm.toFixed(1)} km` : undefined} />
       </div>
+
+      {/* Extended device identifiers (read on demand) */}
+      <ExtendedInfoPanel
+        ext={extendedInfo}
+        loading={loadingExtras}
+        error={extrasError}
+        onRefresh={onRefreshExtras}
+      />
 
       {/* Change serial */}
       <div className="panel p-4">
@@ -292,6 +342,109 @@ export function InfoScreen() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+// ============================================================================
+// Extended device identifiers panel
+// ============================================================================
+
+function formatAge(ms: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+/**
+ * Read-only panel showing extended identifiers pulled from the scooter on
+ * demand: model id, COC region code, ESC last-fault, BLE/BMS hardware
+ * revisions, BMS cycle count + state-of-health, and the BLE peripheral
+ * address. The refresh button re-issues the BLE reads and shows live
+ * loading + error feedback. Errors are surfaced both inline (panel chip)
+ * and via toast (in the parent).
+ */
+function ExtendedInfoPanel({
+  ext, loading, error, onRefresh,
+}: {
+  ext: ExtendedDeviceInfo | null;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void | Promise<void>;
+}) {
+  const errorWord = ext?.errorCode && ext.errorCode !== "0x0000" && ext.errorCode !== "—";
+
+  return (
+    <div className="panel p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Cpu className="w-4 h-4 text-primary-glow" />
+          <div className="mono text-[11px] tracking-[0.2em] uppercase">Device identifiers</div>
+        </div>
+        <div className="flex items-center gap-2">
+          {ext?.readAt && !loading && (
+            <span className="mono text-[9px] text-muted-foreground/80 tracking-widest uppercase">
+              {formatAge(ext.readAt)}
+            </span>
+          )}
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            className={cn(
+              "text-muted-foreground hover:text-primary-glow transition-colors disabled:opacity-50",
+              loading && "text-primary-glow",
+            )}
+            aria-label="Refresh device identifiers"
+          >
+            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed">
+        Extra metadata pulled directly from ESC, BLE, and BMS controllers. Tap
+        refresh to re-read all values over BLE.
+      </p>
+
+      {error && (
+        <div className="mb-2 rounded-md border border-destructive/40 bg-destructive/5 px-2.5 py-2 flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0 mt-0.5" />
+          <div className="mono text-[10px] text-destructive break-all leading-relaxed">{error}</div>
+        </div>
+      )}
+
+      <Row label="Model" value={ext?.modelId} />
+      <Row label="COC version" value={ext?.cocVersion} />
+      <Row label="BLE address" value={ext?.bleAddress} />
+      <Row label="BLE hardware" value={ext?.bleHwVersion} />
+      <Row label="BMS hardware" value={ext?.bmsHwVersion} />
+      <Row
+        label="BMS cycles"
+        value={ext?.bmsCycles !== undefined ? String(ext.bmsCycles) : undefined}
+        copyable={false}
+      />
+      <Row
+        label="Battery health"
+        value={ext?.bmsHealthPct !== undefined ? `${ext.bmsHealthPct}%` : undefined}
+        copyable={false}
+      />
+      <Row
+        label="Last error"
+        value={ext?.errorCode}
+        copyable={!!ext?.errorCode}
+      />
+
+      {errorWord && (
+        <div className="mt-2 rounded-md border border-warning/40 bg-warning/5 px-2.5 py-2 flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" />
+          <div className="text-[11px] text-warning leading-relaxed">
+            ESC reports a non-zero fault code <span className="mono">{ext?.errorCode}</span>.
+            Investigate before riding or flashing.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

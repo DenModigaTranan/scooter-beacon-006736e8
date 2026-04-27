@@ -45,8 +45,11 @@ export const M365 = {
   /** Known register offsets for read commands (subset, ESC unless noted). */
   REG: {
     SERIAL: 0x10,           // 14 bytes ASCII
-    HARDWARE_VERSION: 0x19, // u16 -> v X.Y.Z (ESC)
+    MODEL_ID: 0x16,         // 2 bytes — board model id (ESC)
+    COC_VERSION: 0x17,      // 2 bytes — homologation / region code (ESC)
+    HARDWARE_VERSION: 0x19, // u16 -> v X.Y.Z (ESC / BLE / BMS, target-dependent)
     FIRMWARE_VERSION: 0x1a, // u16 -> v X.Y.Z
+    ERROR_CODE: 0x1b,       // u16 — last fault code (ESC)
     BATTERY_PCT: 0x22,
     REMAINING_CAPACITY: 0x32,
     BATTERY_VOLTAGE: 0x34,
@@ -57,6 +60,8 @@ export const M365 = {
     MILEAGE_TRIP: 0x2b,
     RIDING_MODE: 0x75,
     BMS_DATE: 0xb2,         // u16 packed Y/M/D (BMS)
+    BMS_CYCLES: 0x1b,       // u16 — charge cycle count (BMS)
+    BMS_HEALTH_PCT: 0x2e,   // u8  — state of health 0..100 (BMS)
   },
 } as const;
 
@@ -143,6 +148,31 @@ export function decodeVersion(word: number): string {
   const b = (word >> 4) & 0x0f;
   const c = word & 0x0f;
   return `${a}.${b}.${c}`;
+}
+
+/**
+ * Map a 16-bit board model id to a human label. The community has documented
+ * a handful of values; unknown ids fall back to a hex string so the user can
+ * still identify and report the board.
+ */
+const MODEL_NAMES: Record<number, string> = {
+  0x0001: "M365 (1st gen)",
+  0x0002: "M365 Pro",
+  0x0003: "Essential",
+  0x0004: "1S",
+  0x0005: "Pro 2",
+  0x0006: "3 / Lite",
+};
+export function decodeModelId(word: number): string {
+  if (word === 0 || word === 0xffff) return "—";
+  const name = MODEL_NAMES[word];
+  return name ? `${name} (0x${word.toString(16).padStart(4, "0")})` : `0x${word.toString(16).padStart(4, "0")}`;
+}
+
+/** Render an error/COC word as a 4-digit hex code. */
+export function decodeWordHex(word: number): string {
+  if (word === 0xffff) return "—";
+  return `0x${word.toString(16).padStart(4, "0").toUpperCase()}`;
 }
 
 /**

@@ -13,8 +13,10 @@ import {
   buildChunkFrame,
   buildFrame,
   decodeBmsDate,
+  decodeModelId,
   decodeSerial,
   decodeVersion,
+  decodeWordHex,
   parseFrame,
   readRegister,
   writeRegister,
@@ -37,6 +39,33 @@ export interface ScooterInfo {
   hwVersion?: string;
   manufactureDate?: string;
   totalMileageKm: number;
+}
+
+/**
+ * Extended identifiers and stats read on demand from the device. These are
+ * NOT included in the bootstrap `readInfo()` because they are slower to
+ * collect and not needed for the connect flow — the Info screen reads them
+ * lazily when the user taps "Read extras".
+ */
+export interface ExtendedDeviceInfo {
+  /** Hex-formatted board model id, with a friendly name where known. */
+  modelId?: string;
+  /** Region / homologation code as 0xXXXX. */
+  cocVersion?: string;
+  /** ESC last-fault code as 0xXXXX (`0x0000` = no fault). */
+  errorCode?: string;
+  /** BLE module hardware revision (X.Y.Z). */
+  bleHwVersion?: string;
+  /** BMS hardware revision (X.Y.Z). */
+  bmsHwVersion?: string;
+  /** Total battery charge cycles. */
+  bmsCycles?: number;
+  /** Battery state of health, 0-100 %. */
+  bmsHealthPct?: number;
+  /** BLE peripheral address (mirrored from the `DiscoveredDevice`). */
+  bleAddress?: string;
+  /** Epoch ms when this snapshot was read. */
+  readAt: number;
 }
 
 export interface Telemetry {
@@ -393,6 +422,67 @@ export class ScooterService {
     await this.write(readRegister(M365.ADDR.BMS, M365.REG.FIRMWARE_VERSION, 2));
     await this.write(readRegister(M365.ADDR.BMS, M365.REG.SERIAL, 14));
     await this.write(readRegister(M365.ADDR.BMS, M365.REG.BMS_DATE, 2));
+    await collect;
+    return out;
+  }
+
+  /**
+   * Read extended identifiers — model id, COC code, BLE/BMS hardware
+   * revisions, BMS health & cycles, and the most recent ESC error code.
+   * Slower than `readInfo()` because it issues one read per register and
+   * awaits replies; use sparingly (e.g. on user-initiated refresh).
+   */
+  async readExtendedInfo(bleAddress?: string): Promise<ExtendedDeviceInfo> {
+    if (!isNative()) {
+      // Stable mock so the panel always renders something useful in preview.
+      // Slight randomness on cycles/health to make manual refresh visible.
+      const cycles = 142 + Math.floor(Math.random() * 4);
+      const health = 96 - Math.floor(Math.random() * 3);
+      return {
+        modelId: decodeModelId(0x0002),
+        cocVersion: "0x010A",
+        errorCode: "0x0000",
+        bleHwVersion: "1.2.0",
+        bmsHwVersion: "1.0.4",
+        bmsCycles: cycles,
+        bmsHealthPct: health,
+        bleAddress: bleAddress ?? "—",
+        readAt: Date.now(),
+      };
+    }
+
+    const out: ExtendedDeviceInfo = { readAt: Date.now(), bleAddress };
+    const collect = new Promise<void>((resolve) => {
+      const off = this.onFrame((f) => {
+        if (!f) return;
+        const word = f.args[1] | (f.args[2] << 8);
+        if (f.addr === M365.ADDR.ESC && f.args[0] === M365.REG.MODEL_ID) {
+          out.modelId = decodeModelId(word);
+        } else if (f.addr === M365.ADDR.ESC && f.args[0] === M365.REG.COC_VERSION) {
+          out.cocVersion = decodeWordHex(word);
+        } else if (f.addr === M365.ADDR.ESC && f.args[0] === M365.REG.ERROR_CODE) {
+          out.errorCode = decodeWordHex(word);
+        } else if (f.addr === M365.ADDR.BLE && f.args[0] === M365.REG.HARDWARE_VERSION) {
+          out.bleHwVersion = decodeVersion(word);
+        } else if (f.addr === M365.ADDR.BMS && f.args[0] === M365.REG.HARDWARE_VERSION) {
+          out.bmsHwVersion = decodeVersion(word);
+        } else if (f.addr === M365.ADDR.BMS && f.args[0] === M365.REG.BMS_CYCLES) {
+          out.bmsCycles = word;
+        } else if (f.addr === M365.ADDR.BMS && f.args[0] === M365.REG.BMS_HEALTH_PCT) {
+          // single-byte payload past the register echo
+          out.bmsHealthPct = f.args[1];
+        }
+      });
+      setTimeout(() => { off(); resolve(); }, 1800);
+    });
+
+    await this.write(readRegister(M365.ADDR.ESC, M365.REG.MODEL_ID, 2));
+    await this.write(readRegister(M365.ADDR.ESC, M365.REG.COC_VERSION, 2));
+    await this.write(readRegister(M365.ADDR.ESC, M365.REG.ERROR_CODE, 2));
+    await this.write(readRegister(M365.ADDR.BLE, M365.REG.HARDWARE_VERSION, 2));
+    await this.write(readRegister(M365.ADDR.BMS, M365.REG.HARDWARE_VERSION, 2));
+    await this.write(readRegister(M365.ADDR.BMS, M365.REG.BMS_CYCLES, 2));
+    await this.write(readRegister(M365.ADDR.BMS, M365.REG.BMS_HEALTH_PCT, 1));
     await collect;
     return out;
   }
