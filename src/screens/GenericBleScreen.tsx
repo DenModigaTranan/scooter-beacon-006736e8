@@ -507,7 +507,7 @@ export function GenericBleScreen() {
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
       connectInFlightRef.current = false;
     }
-  }, [connState, pushLog]);
+  }, [connState, pushLog, setAttemptOutcome]);
 
   const disconnect = useCallback(async () => {
     connectAbortRef.current?.abort();
