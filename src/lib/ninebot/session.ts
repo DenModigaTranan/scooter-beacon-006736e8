@@ -83,7 +83,7 @@ export class NinebotSession {
   private events: NinebotSessionEvents;
   private status: NinebotSessionStatus = "idle";
   private telemetry: NinebotTelemetry = {};
-  private rxBuffer = new Uint8Array(0);
+  private rxBuffer: Uint8Array = new Uint8Array(0);
   private unsubscribeNotify: (() => Promise<void>) | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private pollIndex = 0;
