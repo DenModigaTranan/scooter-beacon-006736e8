@@ -88,6 +88,14 @@ export function GenericBleScreen() {
    * so the user can bail at any time.
    */
   const connectAbortRef = useRef<AbortController | null>(null);
+  /**
+   * Synchronous re-entry guard. React state updates are batched/async, so two
+   * rapid clicks on the same (or different) CONNECT button can both pass the
+   * `connState === "connecting"` check before either render commits. This ref
+   * flips synchronously inside connect() so a second invocation in the same
+   * tick is rejected immediately.
+   */
+  const connectInFlightRef = useRef(false);
 
   // ---- scanning ----------------------------------------------------------
   const startScan = useCallback(async () => {
