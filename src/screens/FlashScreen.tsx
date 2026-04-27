@@ -156,9 +156,18 @@ export function FlashScreen() {
     const fwOk = !!(selected || customFile);
     const confirmOk = confirmText === "CONFIRM";
     const versionDetected = !!info;
-    const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck;
-    return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, all };
-  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck]);
+    // Clone-tolerant gating: if the handshake resolved against a non-strict
+    // GATT variant, require an additional ack on top of the base risk ack.
+    // This keeps the safety bar HIGHER for clones, not lower.
+    const cloneOk = !handshake?.cloneMode || cloneAck;
+    const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck && cloneOk;
+    return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, cloneOk, all };
+  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck, cloneAck]);
+
+  // Reset the clone-mode ack any time the handshake snapshot changes so the
+  // user can't accidentally inherit a previous tick after a re-handshake or
+  // after switching to a different device.
+  useEffect(() => { setCloneAck(false); }, [handshake?.at, handshake?.variantId]);
 
   // ─── Safety guard called by scooter.flash() before every chunk ─────
   const safetyCheck = (): string | null => {
