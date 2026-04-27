@@ -403,6 +403,8 @@ export function GenericBleScreen() {
         onRetry={() => connectedDevice && connect(connectedDevice)}
       />
 
+      {/* Connection log — small expandable panel of timestamped events */}
+      <ConnectionLogPanel entries={log} onClear={clearLog} now={now} />
       {/* Discovered services panel — only when connected */}
       <AnimatePresence>
         {connState === "connected" && (
