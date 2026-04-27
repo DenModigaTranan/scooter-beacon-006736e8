@@ -1134,13 +1134,14 @@ function ScanStateChip({ state, count }: { state: ScanState; count: number }) {
 }
 
 function ConnStatusBanner({
-  connState, device, error, phase, now, onDisconnect, onCancel, onRetry,
+  connState, device, error, phase, now, attemptOutcomes, onDisconnect, onCancel, onRetry,
 }: {
   connState: ConnState;
   device: GenericDevice | null;
   error: string | null;
   phase: ConnectPhase;
   now: number;
+  attemptOutcomes: AttemptOutcome[];
   onDisconnect: () => void;
   onCancel: () => void;
   onRetry: () => void;
