@@ -19,13 +19,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bluetooth, Loader2, RefreshCw, Search, Signal, X, Zap, Check,
-  AlertTriangle, WifiOff, Plug, PlugZap, ChevronRight,
+  AlertTriangle, WifiOff, Plug, PlugZap, ChevronRight, Download, Upload, Bell, BellOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  genericBle, type GenericDevice, type GenericServiceInfo,
+  genericBle, formatBytes, getMockHint, charKey,
+  type GenericDevice, type GenericServiceInfo, type GenericCharInfo,
 } from "@/lib/generic-ble";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
