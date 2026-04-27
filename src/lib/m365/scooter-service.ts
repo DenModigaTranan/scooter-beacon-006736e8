@@ -12,6 +12,7 @@ import {
   M365,
   buildChunkFrame,
   buildFrame,
+  decodeBmsDate,
   decodeSerial,
   decodeVersion,
   parseFrame,
@@ -32,6 +33,9 @@ export interface ScooterInfo {
   drvVersion: string;
   bleVersion: string;
   bmsVersion: string;
+  bmsSerial?: string;
+  hwVersion?: string;
+  manufactureDate?: string;
   totalMileageKm: number;
 }
 
@@ -46,6 +50,19 @@ export interface Telemetry {
   totalKm: number;
 }
 
+/** Result of a write-then-verify pass for an editable identifier. */
+export interface VerifyResult {
+  ok: boolean;
+  /** What we tried to write (trimmed). */
+  written: string;
+  /** What the device returned on the verifying read. */
+  readBack: string;
+  /** 1-based attempt counter. */
+  attempt: number;
+  /** Set if the verifying read itself failed (timeout / parse error). */
+  readError?: string;
+}
+
 const isNative = () => Capacitor.isNativePlatform();
 
 export class ScooterService {
@@ -53,6 +70,7 @@ export class ScooterService {
   private rxBuffer: number[] = [];
   private listeners = new Set<(frame: ReturnType<typeof parseFrame>) => void>();
   private mockTimer: ReturnType<typeof setInterval> | null = null;
+  private mockSerial = "16133/00012345";
   private mockTelemetry: Telemetry = {
     speedKph: 0,
     batteryPct: 78,
@@ -154,15 +172,17 @@ export class ScooterService {
   async readInfo(): Promise<ScooterInfo> {
     if (!isNative()) {
       return {
-        serial: "16133/00012345",
+        serial: this.mockSerial,
         drvVersion: "1.5.5",
         bleVersion: "0.96",
         bmsVersion: "1.6.13",
+        bmsSerial: "BMS/" + this.mockSerial.split("/")[1],
+        hwVersion: "1.4.0",
+        manufactureDate: "2022-06-14",
         totalMileageKm: this.mockTelemetry.totalKm,
       };
     }
     // Real: send reads, await responses with a small timeout-based collector.
-    // (Wired up but kept compact — the protocol module handles framing.)
     const out: ScooterInfo = {
       serial: "—", drvVersion: "—", bleVersion: "—", bmsVersion: "—", totalMileageKm: 0,
     };
@@ -173,31 +193,82 @@ export class ScooterService {
         if (f.addr === M365.ADDR.ESC && f.args[0] === M365.REG.FIRMWARE_VERSION) {
           out.drvVersion = decodeVersion(f.args[1] | (f.args[2] << 8));
         }
+        if (f.addr === M365.ADDR.ESC && f.args[0] === M365.REG.HARDWARE_VERSION) {
+          out.hwVersion = decodeVersion(f.args[1] | (f.args[2] << 8));
+        }
         if (f.addr === M365.ADDR.BLE && f.args[0] === M365.REG.FIRMWARE_VERSION) {
           out.bleVersion = decodeVersion(f.args[1] | (f.args[2] << 8));
         }
         if (f.addr === M365.ADDR.BMS && f.args[0] === M365.REG.FIRMWARE_VERSION) {
           out.bmsVersion = decodeVersion(f.args[1] | (f.args[2] << 8));
         }
+        if (f.addr === M365.ADDR.BMS && f.args[0] === M365.REG.SERIAL) {
+          out.bmsSerial = decodeSerial(f.args);
+        }
+        if (f.addr === M365.ADDR.BMS && f.args[0] === M365.REG.BMS_DATE) {
+          out.manufactureDate = decodeBmsDate(f.args[1] | (f.args[2] << 8));
+        }
       });
-      setTimeout(() => { off(); resolve(); }, 1500);
+      setTimeout(() => { off(); resolve(); }, 1800);
     });
 
     await this.write(readRegister(M365.ADDR.ESC, M365.REG.SERIAL, 14));
     await this.write(readRegister(M365.ADDR.ESC, M365.REG.FIRMWARE_VERSION, 2));
+    await this.write(readRegister(M365.ADDR.ESC, M365.REG.HARDWARE_VERSION, 2));
     await this.write(readRegister(M365.ADDR.BLE, M365.REG.FIRMWARE_VERSION, 2));
     await this.write(readRegister(M365.ADDR.BMS, M365.REG.FIRMWARE_VERSION, 2));
+    await this.write(readRegister(M365.ADDR.BMS, M365.REG.SERIAL, 14));
+    await this.write(readRegister(M365.ADDR.BMS, M365.REG.BMS_DATE, 2));
     await collect;
     return out;
   }
 
-  async writeSerial(newSerial: string): Promise<void> {
+  /**
+   * Write a new ESC serial and read it back to verify the device accepted it.
+   * Performs up to `maxAttempts` write→wait→read passes; returns the outcome
+   * of the final attempt regardless of success.
+   */
+  async writeSerialAndVerify(newSerial: string, maxAttempts = 1): Promise<VerifyResult> {
     if (!/^[A-Za-z0-9/]{1,14}$/.test(newSerial)) {
       throw new Error("Serial must be 1–14 ASCII chars (letters, digits, /)");
     }
+    const expected = newSerial.trim();
+    let last: VerifyResult = { ok: false, written: expected, readBack: "", attempt: 0 };
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.writeSerialBytes(expected);
+      } catch (e) {
+        last = { ok: false, written: expected, readBack: "", attempt, readError: String(e) };
+        continue;
+      }
+      await sleep(250);
+
+      let readBack = "";
+      let readError: string | undefined;
+      try {
+        const info = await this.readInfo();
+        readBack = (info.serial ?? "").trim();
+      } catch (e) {
+        readError = String(e);
+      }
+
+      const ok = !readError && readBack === expected;
+      last = { ok, written: expected, readBack, attempt, readError };
+      if (ok) return last;
+    }
+    return last;
+  }
+
+  private async writeSerialBytes(newSerial: string): Promise<void> {
     const padded = newSerial.padEnd(14, " ");
     const bytes = new TextEncoder().encode(padded);
-    if (!isNative()) return;
+    if (!isNative()) {
+      // Simulate the device accepting the write.
+      this.mockSerial = newSerial;
+      await sleep(150);
+      return;
+    }
     await this.write(writeRegister(M365.ADDR.ESC, M365.REG.SERIAL, bytes));
   }
 

@@ -33,6 +33,7 @@ export const M365 = {
   /** Known register offsets for read commands (subset, ESC unless noted). */
   REG: {
     SERIAL: 0x10,           // 14 bytes ASCII
+    HARDWARE_VERSION: 0x19, // u16 -> v X.Y.Z (ESC)
     FIRMWARE_VERSION: 0x1a, // u16 -> v X.Y.Z
     BATTERY_PCT: 0x22,
     REMAINING_CAPACITY: 0x32,
@@ -43,6 +44,7 @@ export const M365 = {
     MILEAGE_TOTAL: 0x29,
     MILEAGE_TRIP: 0x2b,
     RIDING_MODE: 0x75,
+    BMS_DATE: 0xb2,         // u16 packed Y/M/D (BMS)
   },
 } as const;
 
@@ -129,6 +131,24 @@ export function decodeVersion(word: number): string {
   const b = (word >> 4) & 0x0f;
   const c = word & 0x0f;
   return `${a}.${b}.${c}`;
+}
+
+/**
+ * Decode a packed BMS manufacture date word.
+ * Community-documented packing (16 bits, little-endian on the wire):
+ *   bits 15..9 = year offset from 2000  (7 bits)
+ *   bits  8..5 = month                  (4 bits)
+ *   bits  4..0 = day                    (5 bits)
+ * Returns "YYYY-MM-DD" or "—" if implausible.
+ */
+export function decodeBmsDate(word: number): string {
+  const year = 2000 + ((word >> 9) & 0x7f);
+  const month = (word >> 5) & 0x0f;
+  const day = word & 0x1f;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return "—";
+  const mm = String(month).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
 }
 
 /** Build firmware update chunks. The community DRV flash sequence boils down to:

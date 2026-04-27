@@ -66,11 +66,19 @@ export function useScooter() {
     store.setTelemetry(null);
   }, [store]);
 
-  const writeSerial = useCallback(async (s: string) => {
-    await scooter.writeSerial(s);
+  const writeSerialAndVerify = useCallback(async (s: string, maxAttempts = 1) => {
+    const result = await scooter.writeSerialAndVerify(s, maxAttempts);
+    // Always refresh the panel from the latest read so the UI reflects truth,
+    // success or failure.
     const info = await scooter.readInfo();
     store.setInfo(info);
-    await haptic(ImpactStyle.Heavy);
+    if (result.ok) await haptic(ImpactStyle.Heavy);
+    return result;
+  }, [store]);
+
+  const refreshInfo = useCallback(async () => {
+    const info = await scooter.readInfo();
+    store.setInfo(info);
   }, [store]);
 
   return {
@@ -78,7 +86,8 @@ export function useScooter() {
     scan,
     connect,
     disconnect,
-    writeSerial,
+    writeSerialAndVerify,
+    refreshInfo,
     isNative: Capacitor.isNativePlatform(),
   };
 }
