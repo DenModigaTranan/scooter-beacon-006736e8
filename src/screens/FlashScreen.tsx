@@ -35,7 +35,8 @@ const MIN_PHONE_BATTERY_PCT = 30;
 const ARM_COUNTDOWN_S = 3;
 
 export function FlashScreen() {
-  const { telemetry, info, appendLog, clearLog, flashLog, rerunHandshake, state: connState } = useScooter();
+  const { telemetry, info, appendLog, clearLog, flashLog, rerunHandshake, state: connState, refreshInfo } = useScooter();
+  const selectedDevice = useScooterStore((s) => s.selected);
   const pendingFlash = useScooterStore((s) => s.pendingFlash);
   const setPendingFlash = useScooterStore((s) => s.setPendingFlash);
   const handshake = useScooterStore((s) => s.handshake);
