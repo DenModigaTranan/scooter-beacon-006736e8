@@ -10,7 +10,10 @@
  */
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Bluetooth, Loader2, MoreVertical, Pencil, Trash2, Zap, AlertTriangle, CheckCircle2 } from "lucide-react";
+import {
+  Bluetooth, Loader2, MoreVertical, Pencil, Trash2, Zap,
+  AlertTriangle, CheckCircle2, ShieldX, Link2Off, Wifi,
+} from "lucide-react";
 import {
   displayName,
   forgetPairedProfile,
