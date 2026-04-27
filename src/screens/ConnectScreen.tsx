@@ -14,7 +14,7 @@ function rssiBars(rssi: number) {
 }
 
 export function ConnectScreen() {
-  const { state, devices, scan, connect, isNative, errorMessage } = useScooter();
+  const { state, devices, scan, connect, isNative, errorMessage, selected } = useScooter();
 
   useEffect(() => {
     if (state === "idle" && devices.length === 0) scan();
