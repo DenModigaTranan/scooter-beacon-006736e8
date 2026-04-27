@@ -54,6 +54,14 @@ type ConnectPhase =
   | { kind: "backoff"; nextAttempt: number; resumeAt: number; lastError: string };
 
 /**
+ * Per-attempt outcome tile shown in the connect progress strip. `pending` is
+ * the initial blank state, `active` is the in-flight attempt, and the rest
+ * are terminal. The strip is a fixed-length array of MAX_ATTEMPTS entries so
+ * the UI can render N tiles up front and just recolor them in place.
+ */
+type AttemptOutcome = "pending" | "active" | "ok" | "failed" | "timeout";
+
+/**
  * One entry in the user-visible connection log. We keep the structure flat
  * and tiny so the panel can render hundreds of events without churning.
  *
