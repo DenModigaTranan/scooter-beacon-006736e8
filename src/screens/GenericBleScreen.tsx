@@ -21,6 +21,8 @@ import {
   Bluetooth, Loader2, RefreshCw, Search, Signal, X, Zap, Check,
   AlertTriangle, WifiOff, Plug, PlugZap, ChevronRight, Download, Upload, Bell, BellOff,
   ChevronDown, ScrollText, Trash2, Copy, ClipboardCheck,
+  Clock, Unplug, ShieldAlert, HelpCircle,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,6 +108,95 @@ const LOG_KIND_META: Record<LogKind, { label: string; cls: string; dot: string }
   "info":          { label: "INFO",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
   "summary":       { label: "SUMMARY",  cls: "text-foreground",        dot: "bg-foreground/70" },
 };
+
+/**
+ * Visual + copywriting metadata for the failure-summary chip. Each category
+ * picks its own icon, headline, and tone so the user can tell at a glance
+ * whether the run died because the device never answered (timeout), the link
+ * dropped mid-handshake (disconnect), the OS denied access (auth/permission),
+ * the device couldn't be located (not-found), or something else entirely.
+ */
+type FailureCategory = "timeout" | "disconnect" | "auth" | "not-found" | "cancelled" | "generic";
+
+interface FailureClassification {
+  category: FailureCategory;
+  icon: LucideIcon;
+  label: string;
+  tone: "warning" | "destructive" | "muted";
+}
+
+const FAILURE_TONE: Record<FailureClassification["tone"], {
+  border: string; bg: string; iconBg: string; icon: string; header: string;
+}> = {
+  warning: {
+    border: "border-warning/40",
+    bg: "bg-warning/5",
+    iconBg: "bg-warning/20",
+    icon: "text-warning",
+    header: "text-warning",
+  },
+  destructive: {
+    border: "border-destructive/40",
+    bg: "bg-destructive/5",
+    iconBg: "bg-destructive/20",
+    icon: "text-destructive",
+    header: "text-destructive",
+  },
+  muted: {
+    border: "border-border/60",
+    bg: "bg-secondary/30",
+    iconBg: "bg-secondary",
+    icon: "text-muted-foreground",
+    header: "text-muted-foreground",
+  },
+};
+
+/**
+ * Best-effort classification of a connect failure based on the log entry's
+ * kind + cleaned reason text. Patterns intentionally lean permissive — both
+ * iOS-style ("Authorization") and Android-style ("permission denied",
+ * "GATT_INSUFFICIENT_AUTH") wordings are matched so the chip works across
+ * platforms without us having to plumb structured error codes through every
+ * layer.
+ */
+function classifyFailure(kind: LogKind, reason: string): FailureClassification {
+  const r = reason.toLowerCase();
+  if (kind === "timeout" || r.includes("timed out") || r.includes("timeout")) {
+    return { category: "timeout", icon: Clock, label: "Timeout", tone: "warning" };
+  }
+  if (kind === "cancel" || r === "cancelled" || r.startsWith("cancelled")) {
+    return { category: "cancelled", icon: X, label: "Cancelled", tone: "muted" };
+  }
+  if (
+    r.includes("disconnected before gatt") ||
+    (r.includes("gatt") && (r.includes("disconnect") || r.includes("dropped"))) ||
+    r.includes("link lost") ||
+    r.includes("peer disconnected")
+  ) {
+    return { category: "disconnect", icon: Unplug, label: "Link dropped", tone: "destructive" };
+  }
+  if (
+    r.includes("auth") ||
+    r.includes("permission") ||
+    r.includes("denied") ||
+    r.includes("unauthorized") ||
+    r.includes("not authorized") ||
+    r.includes("encryption") ||
+    r.includes("bonding") ||
+    r.includes("pair")
+  ) {
+    return { category: "auth", icon: ShieldAlert, label: "Auth required", tone: "destructive" };
+  }
+  if (
+    r.includes("not found") ||
+    r.includes("unreachable") ||
+    r.includes("no such device") ||
+    r.includes("device gone")
+  ) {
+    return { category: "not-found", icon: HelpCircle, label: "Device unreachable", tone: "warning" };
+  }
+  return { category: "generic", icon: AlertTriangle, label: "Last failure", tone: "destructive" };
+}
 
 function rssiBars(rssi: number): number {
   if (rssi >= -55) return 4;
@@ -824,7 +915,7 @@ function FailureSummaryChip({
   }, [data]);
 
   if (!data) return null;
-  const { entry, attempt, reason, isTimeout, totalLabel, ended, failures } = data;
+  const { entry, attempt, reason, totalLabel, ended, failures } = data;
   const ageSec = Math.max(0, Math.round((now - entry.at) / 1000));
   const ageLabel =
     ageSec < 1 ? "just now"
@@ -836,14 +927,18 @@ function FailureSummaryChip({
   // and unstripped message for bug reports.
   const expandable = failures.length >= 1;
 
+  // Pick icon + headline + tone from the latest failure's kind & cleaned
+  // reason text. This is what makes a "timed out" run read differently from
+  // an auth/permission denial or a peer disconnect mid-handshake.
+  const cls = classifyFailure(entry.kind, reason);
+  const tone = FAILURE_TONE[cls.tone];
+  const Icon = cls.icon;
+
   return (
     <motion.section
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn(
-        "panel border overflow-hidden",
-        isTimeout ? "border-warning/40 bg-warning/5" : "border-destructive/40 bg-destructive/5",
-      )}
+      className={cn("panel border overflow-hidden", tone.border, tone.bg)}
       role="status"
       aria-live="polite"
     >
@@ -860,19 +955,16 @@ function FailureSummaryChip({
       >
         <div className={cn(
           "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
-          isTimeout ? "bg-warning/20" : "bg-destructive/20",
+          tone.iconBg,
         )}>
-          <AlertTriangle className={cn(
-            "w-3.5 h-3.5",
-            isTimeout ? "text-warning" : "text-destructive",
-          )} />
+          <Icon className={cn("w-3.5 h-3.5", tone.icon)} />
         </div>
         <div className="min-w-0 flex-1">
           <div className={cn(
             "mono text-[10px] tracking-[0.22em] uppercase flex items-center gap-2 flex-wrap",
-            isTimeout ? "text-warning" : "text-destructive",
+            tone.header,
           )}>
-            <span>Last failure</span>
+            <span>{cls.label}</span>
             {attempt !== null && (
               <span className="text-muted-foreground/80 normal-case tracking-normal">
                 attempt {attempt}/{MAX_ATTEMPTS}
@@ -902,8 +994,8 @@ function FailureSummaryChip({
         {expandable && (
           <ChevronDown
             className={cn(
-              "w-4 h-4 mt-1 shrink-0 text-muted-foreground transition-transform",
-              isTimeout ? "text-warning/80" : "text-destructive/80",
+              "w-4 h-4 mt-1 shrink-0 transition-transform",
+              tone.icon,
               open && "rotate-180",
             )}
             aria-hidden
@@ -919,14 +1011,12 @@ function FailureSummaryChip({
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className={cn(
-              "border-t",
-              isTimeout ? "border-warning/30" : "border-destructive/30",
-            )}
+            className={cn("border-t", tone.border)}
           >
             <div className={cn(
               "px-3 py-1.5 mono text-[9px] tracking-widest uppercase",
-              isTimeout ? "text-warning/80 bg-warning/[0.06]" : "text-destructive/80 bg-destructive/[0.06]",
+              tone.header,
+              tone.bg,
             )}>
               Failure details · current run
             </div>
