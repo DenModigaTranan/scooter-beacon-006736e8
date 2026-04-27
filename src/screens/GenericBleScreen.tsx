@@ -188,12 +188,16 @@ export function GenericBleScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-render the banner countdown while a connect sequence is active.
+  // Re-render the banner countdown while a connect sequence is active, and
+  // also tick once per second whenever the connection log has any entries so
+  // the "Xs ago" relative timestamps stay accurate even when nothing else is
+  // happening on the screen.
   useEffect(() => {
-    if (connectPhase.kind === "idle") return;
-    const id = setInterval(() => setNow(Date.now()), 250);
+    const fast = connectPhase.kind !== "idle";
+    if (!fast && log.length === 0) return;
+    const id = setInterval(() => setNow(Date.now()), fast ? 250 : 1000);
     return () => clearInterval(id);
-  }, [connectPhase.kind]);
+  }, [connectPhase.kind, log.length]);
 
   // ---- connecting --------------------------------------------------------
 
