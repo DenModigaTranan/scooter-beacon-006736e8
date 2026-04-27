@@ -69,6 +69,7 @@ type LogKind =
   | "backoff"
   | "cancel"
   | "disconnect"
+  | "summary"
   | "info";
 
 interface LogEntry {
