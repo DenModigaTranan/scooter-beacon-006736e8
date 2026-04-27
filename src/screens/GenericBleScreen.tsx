@@ -863,6 +863,38 @@ export function GenericBleScreen() {
           </div>
         </div>
 
+        {/* Target model selector. Pinning a specific model gates Connect on
+            each row to prevent accidentally connecting to the wrong device
+            (e.g. selecting a Max G30 in a fleet that also has F-Series).
+            "Auto-detect" leaves things permissive — the row chip still
+            shows whatever the registry resolved. Models are grouped only
+            implicitly (display order in the registry) to keep the markup
+            simple; the registry is small enough today that a single flat
+            list is more scannable than a nested grouping. */}
+        <div className="mb-2">
+          <label
+            htmlFor="ble-target-model"
+            className="mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground mb-1 block"
+          >
+            Target model
+          </label>
+          <Select value={targetModelId} onValueChange={setTargetModelId}>
+            <SelectTrigger id="ble-target-model" className="mono text-xs h-9">
+              <SelectValue placeholder="Auto-detect" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto" className="mono text-xs">
+                Auto-detect
+              </SelectItem>
+              {NINEBOT_MODELS.map((m) => (
+                <SelectItem key={m.id} value={m.id} className="mono text-xs">
+                  {m.displayName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* Filter input */}
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
