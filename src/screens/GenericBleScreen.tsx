@@ -918,7 +918,7 @@ export function GenericBleScreen() {
  * the total duration of that run. Auto-hides on success.
  */
 function FailureSummaryChip({
-  data, now, canRetry, onRetry, retryInSec,
+  data, now, canRetry, onRetry, retryInSec, onCancelRetry,
 }: {
   data: {
     entry: LogEntry;
@@ -939,6 +939,10 @@ function FailureSummaryChip({
   // null when not in a backoff phase. Drives the inline "Retrying in Xs"
   // countdown next to the Next hint; ticks once per second via `now`.
   retryInSec: number | null;
+  // Aborts the in-flight connect sequence (including any pending backoff
+  // wait). Surfaced inline next to the countdown so users can stop the
+  // auto-retry loop without scrolling back up to the status banner.
+  onCancelRetry: () => void;
 }) {
   // Click-to-expand drawer state. Auto-collapses when the chip is hidden
   // (data === null) so a fresh successful run doesn't reopen with stale rows
