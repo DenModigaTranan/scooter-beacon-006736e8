@@ -20,7 +20,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Bluetooth, Loader2, RefreshCw, Search, Signal, X, Zap, Check,
   AlertTriangle, WifiOff, Plug, PlugZap, ChevronRight, Download, Upload, Bell, BellOff,
-  ChevronDown, ScrollText, Trash2,
+  ChevronDown, ScrollText, Trash2, Copy, ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -620,9 +620,77 @@ function ConnectionLogPanel({
   now: number;
 }) {
   const [open, setOpen] = useState(false);
+  // Transient state for the Copy button: "idle" → "copied"/"error" → "idle"
+  // after ~1.5s. Drives both the icon swap and the colored confirmation.
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Latest entry in header — `entries` is already newest-first.
   const latest = entries[0];
+
+  /**
+   * Build a plain-text dump suitable for pasting into a bug report. Lines
+   * are oldest → newest (chronological reading order), each prefixed with an
+   * ISO-ish timestamp + the event kind in brackets so it's grep-friendly.
+   */
+  const buildClipboardText = useCallback((): string => {
+    const lines: string[] = [
+      `# ScootFlash — Generic BLE connection log`,
+      `# generated at ${new Date().toISOString()} · ${entries.length} ${entries.length === 1 ? "event" : "events"}`,
+      "",
+    ];
+    // entries are newest-first in state; reverse for human reading.
+    for (const e of [...entries].reverse()) {
+      const ts = new Date(e.at).toISOString();
+      lines.push(`${ts}  [${e.kind}]  ${e.message}`);
+    }
+    return lines.join("\n");
+  }, [entries]);
+
+  const handleCopy = useCallback(async () => {
+    if (entries.length === 0) return;
+    const text = buildClipboardText();
+    let ok = false;
+    // Modern path — only available on secure contexts.
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch {
+      ok = false;
+    }
+    // Legacy fallback — works in non-secure contexts and inside some webviews
+    // where the async Clipboard API is gated. Uses a hidden, off-screen
+    // textarea + document.execCommand("copy").
+    if (!ok && typeof document !== "undefined") {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.top = "-1000px";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+    setCopyState(ok ? "copied" : "error");
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopyState("idle"), 1500);
+  }, [entries.length, buildClipboardText]);
+
+  // Reset the transient confirmation if the panel unmounts mid-flash so a
+  // stale "Copied" badge doesn't survive a remount.
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   const meta: Record<LogKind, { label: string; cls: string; dot: string }> = {
     "attempt-start": { label: "TRY",      cls: "text-primary-glow",      dot: "bg-primary-glow" },
@@ -683,18 +751,44 @@ function ConnectionLogPanel({
             transition={{ duration: 0.18, ease: "easeOut" }}
             className="border-t border-border/50"
           >
-            <div className="flex items-center justify-between px-3 py-1.5 bg-secondary/20">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-secondary/20 gap-2">
               <span className="mono text-[9px] tracking-widest uppercase text-muted-foreground/80">
                 Newest first · max {LOG_MAX_ENTRIES}
               </span>
-              <button
-                type="button"
-                onClick={onClear}
-                disabled={entries.length === 0}
-                className="mono text-[9px] tracking-widest uppercase text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center gap-1"
-              >
-                <Trash2 className="w-3 h-3" /> Clear
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  disabled={entries.length === 0}
+                  aria-live="polite"
+                  className={cn(
+                    "mono text-[9px] tracking-widest uppercase inline-flex items-center gap-1 transition-colors",
+                    "disabled:opacity-30 disabled:cursor-not-allowed",
+                    copyState === "copied"
+                      ? "text-primary-glow"
+                      : copyState === "error"
+                        ? "text-destructive"
+                        : "text-muted-foreground hover:text-foreground",
+                  )}
+                  title="Copy the full log to your clipboard"
+                >
+                  {copyState === "copied" ? (
+                    <><ClipboardCheck className="w-3 h-3" /> Copied</>
+                  ) : copyState === "error" ? (
+                    <><Copy className="w-3 h-3" /> Copy failed</>
+                  ) : (
+                    <><Copy className="w-3 h-3" /> Copy log</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClear}
+                  disabled={entries.length === 0}
+                  className="mono text-[9px] tracking-widest uppercase text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                >
+                  <Trash2 className="w-3 h-3" /> Clear
+                </button>
+              </div>
             </div>
             <ul className="max-h-56 overflow-y-auto divide-y divide-border/30">
               {entries.length === 0 ? (
