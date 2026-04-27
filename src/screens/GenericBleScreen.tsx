@@ -309,6 +309,7 @@ export function GenericBleScreen() {
           finish(() => reject(new Error(`timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`)));
           attemptsFailed++;
           attemptsTimedOut++;
+          attemptDurationsMs.push(elapsed());
           pushLog(
             "timeout",
             `Attempt ${attempt} hit timeout (${formatMs(elapsed())} / cap ${cap})`,
