@@ -120,17 +120,41 @@ export function GenericBleScreen() {
     // auto-scan on first mount
     startScan();
     return () => {
+      connectAbortRef.current?.abort();
       genericBle.stopScan().catch(() => {});
       genericBle.disconnect().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Re-render the banner countdown while a connect sequence is active.
+  useEffect(() => {
+    if (connectPhase.kind === "idle") return;
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [connectPhase.kind]);
+
   // ---- connecting --------------------------------------------------------
+
+  /**
+   * Cancel the in-flight connect sequence (timeout + retries). Safe to call
+   * at any phase. Tears down any partial GATT connection so the OS doesn't
+   * keep us in a half-open state.
+   */
+  const cancelConnect = useCallback(async () => {
+    connectAbortRef.current?.abort();
+    connectAbortRef.current = null;
+    setConnectPhase({ kind: "idle" });
+    setConnState("disconnected");
+    setConnectedDevice(null);
+    setConnError("cancelled by user");
+    try { await genericBle.disconnect(); } catch { /* ignore */ }
+  }, []);
+
   const connect = useCallback(async (d: GenericDevice) => {
     if (connState === "connecting") return;
-    // If already connected to a different device, hang up first so the new
-    // connect attempt starts from a clean state.
+    // Tear down any previous connect sequence and any existing connection.
+    connectAbortRef.current?.abort();
     if (connState === "connected") {
       try { await genericBle.disconnect(); } catch { /* ignore */ }
     }
@@ -140,29 +164,135 @@ export function GenericBleScreen() {
     setConnState("connecting");
     setConnError(null);
     setServices([]);
-    try {
-      await genericBle.connect(d.deviceId, () => {
-        setConnState("disconnected");
-        setConnectedDevice(null);
-        setServices([]);
+
+    const ac = new AbortController();
+    connectAbortRef.current = ac;
+    const aborted = () => ac.signal.aborted;
+
+    /**
+     * Race the plugin's connect() against a hard timeout. Resolves when the
+     * GATT link is up; rejects with a timeout/abort/plugin error otherwise.
+     */
+    const attemptOnce = (attempt: number): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const finish = (fn: () => void) => { if (!settled) { settled = true; fn(); } };
+
+        const timeoutId = setTimeout(() => {
+          finish(() => reject(new Error(`timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`)));
+          // Best-effort cleanup so the next attempt starts clean.
+          genericBle.disconnect().catch(() => {});
+        }, PER_ATTEMPT_TIMEOUT_MS);
+
+        const onAbort = () => {
+          clearTimeout(timeoutId);
+          finish(() => reject(new Error("cancelled")));
+          genericBle.disconnect().catch(() => {});
+        };
+        ac.signal.addEventListener("abort", onAbort, { once: true });
+
+        setConnectPhase({
+          kind: "connecting",
+          attempt,
+          deadlineAt: Date.now() + PER_ATTEMPT_TIMEOUT_MS,
+        });
+
+        genericBle.connect(d.deviceId, () => {
+          // Peer-initiated disconnect AFTER we resolved → propagate to UI.
+          // Before we resolved, treat it as a failed attempt so the retry
+          // loop kicks in.
+          if (settled) {
+            setConnState("disconnected");
+            setConnectedDevice(null);
+            setServices([]);
+          } else {
+            finish(() => reject(new Error("disconnected before GATT ready")));
+          }
+        }).then(
+          () => {
+            clearTimeout(timeoutId);
+            ac.signal.removeEventListener("abort", onAbort);
+            finish(() => resolve());
+          },
+          (err) => {
+            clearTimeout(timeoutId);
+            ac.signal.removeEventListener("abort", onAbort);
+            finish(() => reject(err instanceof Error ? err : new Error(String(err))));
+          },
+        );
       });
+
+    /**
+     * Wait `ms` but resolve early on abort. Used between retry attempts so
+     * Cancel always feels instant.
+     */
+    const sleepOrAbort = (ms: number, resumeAt: number) =>
+      new Promise<void>((resolve) => {
+        const onAbort = () => { clearTimeout(t); resolve(); };
+        const t = setTimeout(() => {
+          ac.signal.removeEventListener("abort", onAbort);
+          resolve();
+        }, ms);
+        ac.signal.addEventListener("abort", onAbort, { once: true });
+        // Refresh deadline on tick so the banner can show "retrying in Xs".
+        void resumeAt;
+      });
+
+    let lastError: Error | null = null;
+    try {
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        if (aborted()) throw new Error("cancelled");
+        try {
+          await attemptOnce(attempt);
+          lastError = null;
+          break;
+        } catch (e) {
+          lastError = e instanceof Error ? e : new Error(String(e));
+          if (lastError.message === "cancelled") throw lastError;
+          if (attempt >= MAX_ATTEMPTS) throw lastError;
+          const delay = BACKOFFS_MS[Math.min(attempt - 1, BACKOFFS_MS.length - 1)];
+          const resumeAt = Date.now() + delay;
+          setConnectPhase({
+            kind: "backoff",
+            nextAttempt: attempt + 1,
+            resumeAt,
+            lastError: lastError.message,
+          });
+          await sleepOrAbort(delay, resumeAt);
+          if (aborted()) throw new Error("cancelled");
+        }
+      }
+
+      // Connected — discover services.
       setConnState("connected");
+      setConnectPhase({ kind: "idle" });
       setDiscovering(true);
       try {
         const svcs = await genericBle.discoverServices();
-        setServices(svcs);
+        if (!aborted()) setServices(svcs);
       } finally {
         setDiscovering(false);
       }
     } catch (e) {
-      setConnError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setConnectPhase({ kind: "idle" });
+      if (msg === "cancelled") {
+        // cancelConnect() already wrote disconnected/error message.
+        return;
+      }
+      setConnError(msg);
       setConnState("error");
+      try { await genericBle.disconnect(); } catch { /* ignore */ }
+    } finally {
+      if (connectAbortRef.current === ac) connectAbortRef.current = null;
     }
   }, [connState]);
 
   const disconnect = useCallback(async () => {
+    connectAbortRef.current?.abort();
     await genericBle.disconnect();
     setConnState("disconnected");
+    setConnectPhase({ kind: "idle" });
     setConnectedDevice(null);
     setServices([]);
   }, []);
