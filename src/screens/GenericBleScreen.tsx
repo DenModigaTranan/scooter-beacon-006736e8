@@ -811,66 +811,158 @@ function FailureSummaryChip({
     isTimeout: boolean;
     totalLabel: string | null;
     ended: boolean;
+    failures: LogEntry[];
   } | null;
   now: number;
 }) {
+  // Click-to-expand drawer state. Auto-collapses when the chip is hidden
+  // (data === null) so a fresh successful run doesn't reopen with stale rows
+  // the next time a failure surfaces.
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!data) setOpen(false);
+  }, [data]);
+
   if (!data) return null;
-  const { entry, attempt, reason, isTimeout, totalLabel, ended } = data;
+  const { entry, attempt, reason, isTimeout, totalLabel, ended, failures } = data;
   const ageSec = Math.max(0, Math.round((now - entry.at) / 1000));
   const ageLabel =
     ageSec < 1 ? "just now"
     : ageSec < 60 ? `${ageSec}s ago`
     : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m ago`
     : `${Math.floor(ageSec / 3600)}h ago`;
+  // Only offer the drawer when there's actually something extra to show.
+  // For a single-failure run the chip already says everything; expanding
+  // would just repeat the same line.
+  const hasDrawer = failures.length > 1 || (failures.length === 1 && failures[0].id !== entry.id);
+  // Show the chevron whenever there is at least one failure entry — even a
+  // single one is useful in the drawer because it carries the raw timestamp
+  // and unstripped message for bug reports.
+  const expandable = failures.length >= 1;
 
   return (
-    <motion.div
+    <motion.section
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "panel p-2.5 flex items-start gap-2.5 border",
+        "panel border overflow-hidden",
         isTimeout ? "border-warning/40 bg-warning/5" : "border-destructive/40 bg-destructive/5",
       )}
       role="status"
       aria-live="polite"
     >
-      <div className={cn(
-        "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
-        isTimeout ? "bg-warning/20" : "bg-destructive/20",
-      )}>
-        <AlertTriangle className={cn(
-          "w-3.5 h-3.5",
-          isTimeout ? "text-warning" : "text-destructive",
-        )} />
-      </div>
-      <div className="min-w-0 flex-1">
+      <button
+        type="button"
+        onClick={() => expandable && setOpen((o) => !o)}
+        disabled={!expandable}
+        aria-expanded={expandable ? open : undefined}
+        className={cn(
+          "w-full p-2.5 flex items-start gap-2.5 text-left transition-colors",
+          expandable && "hover:bg-foreground/[0.03] cursor-pointer",
+          !expandable && "cursor-default",
+        )}
+      >
         <div className={cn(
-          "mono text-[10px] tracking-[0.22em] uppercase flex items-center gap-2 flex-wrap",
-          isTimeout ? "text-warning" : "text-destructive",
+          "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
+          isTimeout ? "bg-warning/20" : "bg-destructive/20",
         )}>
-          <span>Last failure</span>
-          {attempt !== null && (
-            <span className="text-muted-foreground/80 normal-case tracking-normal">
-              attempt {attempt}/{MAX_ATTEMPTS}
-            </span>
-          )}
-          {totalLabel && (
-            <span className="text-muted-foreground/80 normal-case tracking-normal">
-              · total {totalLabel}
-            </span>
-          )}
-          {!ended && (
-            <span className="text-muted-foreground/80 normal-case tracking-normal">
-              · in progress
-            </span>
-          )}
-          <span className="text-muted-foreground/60 normal-case tracking-normal">· {ageLabel}</span>
+          <AlertTriangle className={cn(
+            "w-3.5 h-3.5",
+            isTimeout ? "text-warning" : "text-destructive",
+          )} />
         </div>
-        <div className="mono text-[11px] text-foreground/90 leading-snug break-words">
-          {reason}
+        <div className="min-w-0 flex-1">
+          <div className={cn(
+            "mono text-[10px] tracking-[0.22em] uppercase flex items-center gap-2 flex-wrap",
+            isTimeout ? "text-warning" : "text-destructive",
+          )}>
+            <span>Last failure</span>
+            {attempt !== null && (
+              <span className="text-muted-foreground/80 normal-case tracking-normal">
+                attempt {attempt}/{MAX_ATTEMPTS}
+              </span>
+            )}
+            {totalLabel && (
+              <span className="text-muted-foreground/80 normal-case tracking-normal">
+                · total {totalLabel}
+              </span>
+            )}
+            {!ended && (
+              <span className="text-muted-foreground/80 normal-case tracking-normal">
+                · in progress
+              </span>
+            )}
+            {expandable && (
+              <span className="text-muted-foreground/80 normal-case tracking-normal">
+                · {failures.length} {failures.length === 1 ? "entry" : "entries"}
+              </span>
+            )}
+            <span className="text-muted-foreground/60 normal-case tracking-normal">· {ageLabel}</span>
+          </div>
+          <div className="mono text-[11px] text-foreground/90 leading-snug break-words">
+            {reason}
+          </div>
         </div>
-      </div>
-    </motion.div>
+        {expandable && (
+          <ChevronDown
+            className={cn(
+              "w-4 h-4 mt-1 shrink-0 text-muted-foreground transition-transform",
+              isTimeout ? "text-warning/80" : "text-destructive/80",
+              open && "rotate-180",
+            )}
+            aria-hidden
+          />
+        )}
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && expandable && (
+          <motion.div
+            key="failure-drawer"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className={cn(
+              "border-t",
+              isTimeout ? "border-warning/30" : "border-destructive/30",
+            )}
+          >
+            <div className={cn(
+              "px-3 py-1.5 mono text-[9px] tracking-widest uppercase",
+              isTimeout ? "text-warning/80 bg-warning/[0.06]" : "text-destructive/80 bg-destructive/[0.06]",
+            )}>
+              Failure details · current run
+            </div>
+            <ul className="divide-y divide-border/30">
+              {failures.map((f) => {
+                const m = LOG_KIND_META[f.kind];
+                return (
+                  <li key={f.id} className="px-3 py-1.5 flex items-start gap-2">
+                    <span
+                      className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", m.dot)}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="mono text-[10px] text-muted-foreground/80 flex items-center gap-1.5">
+                        <span>{formatLogTime(f.at)}</span>
+                        <span className="text-muted-foreground/50">·</span>
+                        <span className={m.cls}>{m.label}</span>
+                        <span className="text-muted-foreground/50">·</span>
+                        <span>{formatRelative(f.at, now)}</span>
+                      </div>
+                      <div className="mono text-[11px] text-foreground/90 break-words leading-snug">
+                        {f.message}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.section>
   );
 }
 
