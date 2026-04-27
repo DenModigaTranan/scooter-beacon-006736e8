@@ -40,6 +40,56 @@ export const M365 = {
     REQUIRED_CHARS: ["0000fe95-0000-1000-8000-00805f9b34fb"] as const,
     /** Properties we need (write + notify) on the matched characteristic. */
     REQUIRED_PROPS: ["write", "notify"] as const,
+
+    /**
+     * Clone-tolerant handshake variants. Some Ninebot / aftermarket clones
+     * advertise the FE95 service umbrella but expose the M365 protocol over
+     * slightly different characteristic UUIDs, or split RX (write) and TX
+     * (notify) onto two separate characteristics. We accept any of these
+     * fallbacks when the strict layout above isn't present.
+     *
+     * Sources: community reverse-engineering of M365 Pro 2 / 1S / Mi 3 clones,
+     * Scooterhacking / m365-st-link projects.
+     */
+    FALLBACKS: [
+      // Strict M365 — single FE95 char with write + notify (kept here so the
+      // resolver code can iterate one uniform list).
+      {
+        id: "m365-strict",
+        service: "0000fe95-0000-1000-8000-00805f9b34fb",
+        rx: "0000fe95-0000-1000-8000-00805f9b34fb",
+        tx: "0000fe95-0000-1000-8000-00805f9b34fb",
+        rxProps: ["write"] as const,
+        txProps: ["notify"] as const,
+      },
+      // Ninebot-style: split characteristics under FE95.
+      {
+        id: "fe95-split",
+        service: "0000fe95-0000-1000-8000-00805f9b34fb",
+        rx: "00000002-0000-1000-8000-00805f9b34fb",
+        tx: "00000003-0000-1000-8000-00805f9b34fb",
+        rxProps: ["write"] as const,
+        txProps: ["notify"] as const,
+      },
+      // Aftermarket dashboards: writeWithoutResponse on the same FE95 char.
+      {
+        id: "m365-wnr",
+        service: "0000fe95-0000-1000-8000-00805f9b34fb",
+        rx: "0000fe95-0000-1000-8000-00805f9b34fb",
+        tx: "0000fe95-0000-1000-8000-00805f9b34fb",
+        rxProps: ["writeWithoutResponse"] as const,
+        txProps: ["notify"] as const,
+      },
+      // Some clones expose protocol on the Nordic UART service instead.
+      {
+        id: "nus",
+        service: "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
+        rx: "6e400002-b5a3-f393-e0a9-e50e24dcca9e",
+        tx: "6e400003-b5a3-f393-e0a9-e50e24dcca9e",
+        rxProps: ["write", "writeWithoutResponse"] as const,
+        txProps: ["notify"] as const,
+      },
+    ] as const,
   },
 
   /** Known register offsets for read commands (subset, ESC unless noted). */

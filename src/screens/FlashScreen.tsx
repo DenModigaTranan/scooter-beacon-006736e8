@@ -48,6 +48,12 @@ export function FlashScreen() {
   const [customFile, setCustomFile] = useState<{ name: string; bytes: Uint8Array } | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [riskAck, setRiskAck] = useState(false);
+  /**
+   * Extra acknowledgement required when the handshake resolved against a
+   * clone variant (non-strict M365 GATT layout). Reset whenever the
+   * handshake snapshot changes so the user must re-tick after a re-handshake.
+   */
+  const [cloneAck, setCloneAck] = useState(false);
   const [progress, setProgress] = useState(0);
   const [bytesWritten, setBytesWritten] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
@@ -150,9 +156,18 @@ export function FlashScreen() {
     const fwOk = !!(selected || customFile);
     const confirmOk = confirmText === "CONFIRM";
     const versionDetected = !!info;
-    const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck;
-    return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, all };
-  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck]);
+    // Clone-tolerant gating: if the handshake resolved against a non-strict
+    // GATT variant, require an additional ack on top of the base risk ack.
+    // This keeps the safety bar HIGHER for clones, not lower.
+    const cloneOk = !handshake?.cloneMode || cloneAck;
+    const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck && cloneOk;
+    return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, cloneOk, all };
+  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck, cloneAck]);
+
+  // Reset the clone-mode ack any time the handshake snapshot changes so the
+  // user can't accidentally inherit a previous tick after a re-handshake or
+  // after switching to a different device.
+  useEffect(() => { setCloneAck(false); }, [handshake?.at, handshake?.variantId]);
 
   // ─── Safety guard called by scooter.flash() before every chunk ─────
   const safetyCheck = (): string | null => {
@@ -515,7 +530,15 @@ export function FlashScreen() {
               <Check2
                 ok={checks.handshakeOk}
                 label="M365 protocol handshake"
-                value={handshake ? (handshake.ok ? "validated" : handshake.reason) : "pending"}
+                value={
+                  handshake
+                    ? handshake.ok
+                      ? handshake.cloneMode
+                        ? `clone-tolerant (${handshake.variantId})`
+                        : "validated (strict)"
+                      : handshake.reason
+                    : "pending"
+                }
               />
               <Check2
                 ok={checks.battery}
@@ -559,6 +582,57 @@ export function FlashScreen() {
                 >
                   {retryingHandshake ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "RETRY"}
                 </Button>
+              </div>
+            )}
+
+            {handshake?.ok && handshake.cloneMode && (
+              <div className="panel mt-3 p-4 border-warning/40">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4 text-warning" />
+                  <div className="mono text-xs tracking-widest text-warning">
+                    CLONE-TOLERANT HANDSHAKE
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-2">
+                  This device does not expose the strict Xiaomi M365 GATT layout.
+                  The handshake matched a community-known variant
+                  {" "}<span className="mono text-warning">{handshake.variantId}</span>{" "}
+                  and the protocol probe succeeded, so the device speaks M365 framing —
+                  but flashing aftermarket / clone hardware is best-effort and
+                  may behave differently than a genuine scooter.
+                </p>
+                {handshake.warnings.length > 0 && (
+                  <ul className="mb-3 space-y-1">
+                    {handshake.warnings.map((w) => (
+                      <li key={w} className="text-[11px] mono text-warning/90 leading-snug">
+                        • {w}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {handshake.resolved && (
+                  <div className="mb-3 panel p-2 bg-background/40">
+                    <div className="text-[10px] mono uppercase tracking-widest text-muted-foreground mb-1">
+                      Resolved GATT
+                    </div>
+                    <div className="text-[11px] mono text-foreground/80 break-all leading-relaxed">
+                      svc {handshake.resolved.service.slice(0, 8)}…<br />
+                      rx&nbsp; {handshake.resolved.rx.slice(0, 8)}…<br />
+                      tx&nbsp; {handshake.resolved.tx.slice(0, 8)}…
+                    </div>
+                  </div>
+                )}
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cloneAck}
+                    onChange={(e) => setCloneAck(e.target.checked)}
+                    className="mt-0.5 accent-warning"
+                  />
+                  <span className="text-xs text-muted-foreground leading-relaxed">
+                    I understand this is a clone / non-genuine device and accept the elevated brick risk.
+                  </span>
+                </label>
               </div>
             )}
 
