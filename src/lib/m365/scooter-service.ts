@@ -151,6 +151,7 @@ export class ScooterService {
 
   async disconnect(): Promise<void> {
     if (!this.connectedId) return;
+    this.lastHandshake = null;
     if (!isNative()) {
       this.stopMockLoop();
       this.connectedId = null;
@@ -161,6 +162,138 @@ export class ScooterService {
   }
 
   isConnected(): boolean { return this.connectedId !== null; }
+
+  /** Latest handshake snapshot (or null if never run / since reset). */
+  getHandshake(): HandshakeResult | null { return this.lastHandshake; }
+
+  /**
+   * Validate the BLE GATT layout against what the M365 protocol expects.
+   * Must be called after connect() and before any flash operation.
+   *
+   * Steps:
+   *  1. Trigger service discovery and enumerate the device's services.
+   *  2. Check that the FE95 service is present.
+   *  3. Check that the matching characteristic exposes both `write` and
+   *     `notify` properties.
+   *  4. Send a no-op probe read (FIRMWARE_VERSION on ESC) and confirm the
+   *     device replies — this catches devices that advertise the right UUIDs
+   *     but speak a different protocol on top (e.g. some Ninebot clones).
+   */
+  async handshake(opts?: { onLog?: (line: string) => void }): Promise<HandshakeResult> {
+    const log = opts?.onLog ?? (() => {});
+    const at = new Date().toISOString();
+
+    if (!this.connectedId) {
+      const r: HandshakeResult = {
+        ok: false, servicesFound: [], missingServices: [...M365.HANDSHAKE.REQUIRED_SERVICES],
+        missingChars: [...M365.HANDSHAKE.REQUIRED_CHARS], missingProps: [...M365.HANDSHAKE.REQUIRED_PROPS],
+        probeResponded: false, reason: "not connected", at,
+      };
+      this.lastHandshake = r;
+      return r;
+    }
+
+    if (!isNative()) {
+      // Web preview: simulate a successful handshake against the mock device.
+      log("> handshake: mock device — assuming M365-compatible GATT");
+      const r: HandshakeResult = {
+        ok: true,
+        servicesFound: [...M365.HANDSHAKE.REQUIRED_SERVICES],
+        missingServices: [],
+        missingChars: [],
+        missingProps: [],
+        probeResponded: true,
+        reason: "ok",
+        at,
+      };
+      this.lastHandshake = r;
+      return r;
+    }
+
+    log("> handshake: discovering GATT services…");
+    try { await BleClient.discoverServices({ deviceId: this.connectedId }); } catch { /* some platforms auto-discover */ }
+
+    let services: Array<{ uuid: string; characteristics: Array<{ uuid: string; properties: Record<string, boolean> }> }> = [];
+    try {
+      const raw = await BleClient.getServices({ deviceId: this.connectedId });
+      services = (raw ?? []).map((s) => ({
+        uuid: String(s.uuid).toLowerCase(),
+        characteristics: (s.characteristics ?? []).map((c) => ({
+          uuid: String(c.uuid).toLowerCase(),
+          properties: (c.properties ?? {}) as Record<string, boolean>,
+        })),
+      }));
+    } catch (e) {
+      const r: HandshakeResult = {
+        ok: false, servicesFound: [], missingServices: [...M365.HANDSHAKE.REQUIRED_SERVICES],
+        missingChars: [...M365.HANDSHAKE.REQUIRED_CHARS], missingProps: [...M365.HANDSHAKE.REQUIRED_PROPS],
+        probeResponded: false, reason: `service discovery failed: ${e}`, at,
+      };
+      this.lastHandshake = r;
+      log(`! handshake: ${r.reason}`);
+      return r;
+    }
+
+    const servicesFound = services.map((s) => s.uuid);
+    const missingServices = M365.HANDSHAKE.REQUIRED_SERVICES.filter((u) => !servicesFound.includes(u));
+    const m365Service = services.find((s) => s.uuid === M365.SERVICE.toLowerCase());
+    const charsFound = (m365Service?.characteristics ?? []).map((c) => c.uuid);
+    const missingChars = M365.HANDSHAKE.REQUIRED_CHARS.filter((u) => !charsFound.includes(u));
+
+    const targetChar = m365Service?.characteristics.find((c) => c.uuid === M365.CHAR_RX.toLowerCase());
+    const missingProps = M365.HANDSHAKE.REQUIRED_PROPS.filter((p) => !targetChar?.properties?.[p]);
+
+    if (missingServices.length || missingChars.length || missingProps.length) {
+      const reason =
+        missingServices.length ? `missing service ${missingServices.join(", ")}` :
+        missingChars.length    ? `missing characteristic ${missingChars.join(", ")}` :
+                                 `characteristic missing properties: ${missingProps.join(", ")}`;
+      const r: HandshakeResult = {
+        ok: false, servicesFound, missingServices, missingChars, missingProps,
+        probeResponded: false, reason, at,
+      };
+      this.lastHandshake = r;
+      log(`! handshake: ${reason}`);
+      return r;
+    }
+
+    // GATT shape is correct — now confirm the device actually speaks M365 by
+    // probing a known register and waiting for a parseable reply.
+    log("> handshake: probing ESC firmware register…");
+    const probeResponded = await new Promise<boolean>((resolve) => {
+      let done = false;
+      const off = this.onFrame((f) => {
+        if (done || !f) return;
+        if (f.addr === M365.ADDR.ESC && f.args[0] === M365.REG.FIRMWARE_VERSION) {
+          done = true; off(); resolve(true);
+        }
+      });
+      this.write(readRegister(M365.ADDR.ESC, M365.REG.FIRMWARE_VERSION, 2)).catch(() => {});
+      setTimeout(() => { if (!done) { off(); resolve(false); } }, 1500);
+    });
+
+    const r: HandshakeResult = {
+      ok: probeResponded,
+      servicesFound, missingServices, missingChars, missingProps,
+      probeResponded,
+      reason: probeResponded ? "ok" : "no response to probe (device may not speak M365 protocol)",
+      at,
+    };
+    this.lastHandshake = r;
+    log(probeResponded ? "> handshake: OK" : `! handshake: ${r.reason}`);
+    return r;
+  }
+
+  /** Throws if the latest handshake didn't pass. Used to gate dangerous ops. */
+  private requireHandshake(): void {
+    if (!this.lastHandshake?.ok) {
+      throw new Error(
+        this.lastHandshake
+          ? `BLE handshake not validated: ${this.lastHandshake.reason}`
+          : "BLE handshake not validated: run handshake() after connect()"
+      );
+    }
+  }
 
   private feedRx(chunk: Uint8Array) {
     for (const b of chunk) this.rxBuffer.push(b);
