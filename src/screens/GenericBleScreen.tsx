@@ -1211,6 +1211,11 @@ function ConnStatusBanner({
             CANCEL
           </Button>
         </div>
+        {/* Per-attempt progress strip: one tile per configured attempt slot.
+            Pending tiles read as muted, the active tile pulses, and finished
+            tiles lock in green/red so the user can see at a glance which
+            attempts already happened and how each ended. */}
+        <AttemptProgressStrip outcomes={attemptOutcomes} currentAttempt={attempt} />
         {/* Slim deadline indicator: fills as the per-attempt timeout approaches. */}
         <div className="mt-2 h-0.5 w-full rounded-full bg-secondary overflow-hidden">
           <div
