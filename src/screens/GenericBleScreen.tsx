@@ -250,6 +250,11 @@ export function GenericBleScreen() {
     let attemptsSucceeded = 0;   // exactly 0 or 1 in current design
     let attemptsFailed = 0;      // timeouts + plugin errors + early disconnects
     let attemptsTimedOut = 0;    // subset of attemptsFailed
+    // Wall-clock duration of every attempt that actually started (ok or not).
+    // Used to surface min/max attempt time in the closing summary so bug
+    // reports show how the configured PER_ATTEMPT_TIMEOUT_MS cap compares to
+    // what actually happened in the field.
+    const attemptDurationsMs: number[] = [];
 
     /**
      * Emit the closing summary entry. Called from every terminal branch
@@ -264,12 +269,23 @@ export function GenericBleScreen() {
         outcome === "success"   ? "Connected"
         : outcome === "cancelled" ? "Cancelled"
         : "Failed";
+      const cap = formatMs(PER_ATTEMPT_TIMEOUT_MS);
       const counts =
         `${attemptsSucceeded} ok · ${attemptsFailed} failed` +
         (attemptsTimedOut ? ` (${attemptsTimedOut} timeout${attemptsTimedOut === 1 ? "" : "s"})` : "");
+      // Only show min/max once we have ≥1 finished attempt. With a single
+      // attempt, "min == max" is noise so collapse to a single value.
+      let timing = ` · cap ${cap}/attempt`;
+      if (attemptDurationsMs.length === 1) {
+        timing += ` · attempt ${formatMs(attemptDurationsMs[0])}`;
+      } else if (attemptDurationsMs.length > 1) {
+        const min = Math.min(...attemptDurationsMs);
+        const max = Math.max(...attemptDurationsMs);
+        timing += ` · attempts ${formatMs(min)}–${formatMs(max)}`;
+      }
       pushLog(
         "summary",
-        `${verb} after ${total} · ${attemptsTried}/${MAX_ATTEMPTS} attempt${attemptsTried === 1 ? "" : "s"} · ${counts}`,
+        `${verb} after ${total} · ${attemptsTried}/${MAX_ATTEMPTS} attempt${attemptsTried === 1 ? "" : "s"} · ${counts}${timing}`,
       );
     };
 
