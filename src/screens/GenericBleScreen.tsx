@@ -2047,18 +2047,20 @@ function DeviceRow({
         ) : (
           <Button
             onClick={onConnect}
-            disabled={disabled || isConnecting}
+            disabled={disabled || isConnecting || targetMismatch}
             aria-busy={isConnecting}
             title={
-              disabled && !isConnecting
-                ? "Another connect attempt is in progress"
-                : undefined
+              targetMismatch
+                ? `Target pinned to a different model — detected ${ninebotModel?.model.displayName ?? "non-Ninebot device"}. Switch the Target model dropdown to "Auto-detect" or this device's model to enable Connect.`
+                : disabled && !isConnecting
+                  ? "Another connect attempt is in progress"
+                  : undefined
             }
             size="sm"
             className={cn(
               "mono text-[10px] tracking-widest",
               "bg-gradient-mint text-primary-foreground shadow-mint hover:opacity-90",
-              disabled && !isConnecting && "opacity-50 cursor-not-allowed",
+              (disabled || targetMismatch) && !isConnecting && "opacity-50 cursor-not-allowed",
             )}
           >
             {isConnecting ? (
