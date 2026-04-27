@@ -34,6 +34,24 @@ type ConnState = "disconnected" | "connecting" | "connected" | "error";
 
 const SCAN_DURATION_MS = 6000;
 
+/**
+ * Connect-retry policy. We never want the UI to hang in "connecting" — if
+ * the underlying plugin promise stalls (which happens on flaky links or when
+ * the peer fails GATT before the OS notices), each attempt is hard-capped
+ * at PER_ATTEMPT_TIMEOUT_MS. After a failure, we wait BACKOFFS_MS[i] and try
+ * again, up to MAX_ATTEMPTS total. The whole sequence is abortable by the
+ * user from the connecting banner.
+ */
+const PER_ATTEMPT_TIMEOUT_MS = 8000;
+const MAX_ATTEMPTS = 3;
+const BACKOFFS_MS = [500, 1500] as const; // delays between attempts 1→2, 2→3
+
+/** Phase within a single connect sequence — drives banner UI. */
+type ConnectPhase =
+  | { kind: "idle" }
+  | { kind: "connecting"; attempt: number; deadlineAt: number }
+  | { kind: "backoff"; nextAttempt: number; resumeAt: number; lastError: string };
+
 function rssiBars(rssi: number): number {
   if (rssi >= -55) return 4;
   if (rssi >= -65) return 3;
