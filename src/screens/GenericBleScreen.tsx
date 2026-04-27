@@ -507,12 +507,15 @@ function ScanStateChip({ state, count }: { state: ScanState; count: number }) {
 }
 
 function ConnStatusBanner({
-  connState, device, error, onDisconnect, onRetry,
+  connState, device, error, phase, now, onDisconnect, onCancel, onRetry,
 }: {
   connState: ConnState;
   device: GenericDevice | null;
   error: string | null;
+  phase: ConnectPhase;
+  now: number;
   onDisconnect: () => void;
+  onCancel: () => void;
   onRetry: () => void;
 }) {
   if (connState === "disconnected") {
@@ -532,16 +535,67 @@ function ConnStatusBanner({
   }
 
   if (connState === "connecting") {
+    // Derive UI from the retry-state-machine phase. While "connecting" we
+    // show attempt N/MAX and a slim deadline progress bar; while "backoff"
+    // we show "retrying in Xs" with a count-up to the next attempt.
+    const isBackoff = phase.kind === "backoff";
+    const attempt = phase.kind === "connecting" ? phase.attempt
+                  : phase.kind === "backoff"   ? phase.nextAttempt - 1
+                  : 1;
+    const deadlineAt = phase.kind === "connecting" ? phase.deadlineAt : 0;
+    const remainingMs = deadlineAt ? Math.max(0, deadlineAt - now) : 0;
+    const elapsedFrac = deadlineAt
+      ? Math.min(1, 1 - remainingMs / PER_ATTEMPT_TIMEOUT_MS)
+      : 0;
+    const resumeIn = phase.kind === "backoff" ? Math.max(0, Math.ceil((phase.resumeAt - now) / 1000)) : 0;
+
     return (
-      <div className="panel-glow p-3 flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-md bg-primary/20 flex items-center justify-center">
-          <Loader2 className="w-4 h-4 text-primary-glow animate-spin" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="mono text-[10px] tracking-[0.22em] uppercase text-primary-glow">
-            Connecting…
+      <div className="panel-glow p-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-md bg-primary/20 flex items-center justify-center">
+            <Loader2 className="w-4 h-4 text-primary-glow animate-spin" />
           </div>
-          <div className="mono text-xs truncate">{device?.name}</div>
+          <div className="flex-1 min-w-0">
+            <div className="mono text-[10px] tracking-[0.22em] uppercase text-primary-glow flex items-center gap-2">
+              <span>{isBackoff ? "Retrying" : "Connecting…"}</span>
+              <span className="text-muted-foreground/80">
+                attempt {attempt}/{MAX_ATTEMPTS}
+              </span>
+            </div>
+            <div className="mono text-xs truncate">{device?.name}</div>
+            {isBackoff && phase.kind === "backoff" && (
+              <div className="mono text-[10px] text-warning/90 truncate mt-0.5">
+                {phase.lastError} · next try in {resumeIn}s
+              </div>
+            )}
+            {!isBackoff && deadlineAt > 0 && (
+              <div className="mono text-[10px] text-muted-foreground mt-0.5">
+                timeout in {Math.ceil(remainingMs / 1000)}s
+              </div>
+            )}
+          </div>
+          <Button
+            onClick={onCancel}
+            size="sm"
+            variant="outline"
+            className="mono text-[10px] tracking-widest shrink-0"
+          >
+            CANCEL
+          </Button>
+        </div>
+        {/* Slim deadline indicator: fills as the per-attempt timeout approaches. */}
+        <div className="mt-2 h-0.5 w-full rounded-full bg-secondary overflow-hidden">
+          <div
+            className={cn(
+              "h-full transition-[width] duration-200 ease-linear",
+              isBackoff ? "bg-warning/70" : "bg-primary-glow",
+            )}
+            style={{
+              width: isBackoff
+                ? "100%"
+                : `${Math.round(elapsedFrac * 100)}%`,
+            }}
+          />
         </div>
       </div>
     );
