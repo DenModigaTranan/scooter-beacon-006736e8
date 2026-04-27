@@ -340,6 +340,7 @@ export function GenericBleScreen() {
           attemptsFailed++;
           attemptsTimedOut++;
           attemptDurationsMs.push(elapsed());
+          setAttemptOutcome(attempt, "timeout");
           pushLog(
             "timeout",
             `Attempt ${attempt} hit timeout (${formatMs(elapsed())} / cap ${cap})`,
