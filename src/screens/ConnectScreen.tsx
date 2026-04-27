@@ -4,6 +4,7 @@ import { Bluetooth, Loader2, RefreshCw, Signal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useScooter } from "@/hooks/use-scooter";
 import { StatusBadge } from "@/components/StatusBadge";
+import { PairedScooters } from "@/components/PairedScooters";
 
 function rssiBars(rssi: number) {
   if (rssi >= -55) return 4;
