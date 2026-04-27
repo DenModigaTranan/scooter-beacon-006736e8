@@ -456,22 +456,17 @@ const MOCK_CATALOG: MockPeripheral[] = [
 
   // 5) Ninebot-style scooter — advertises the custom Ninebot service UUID
   //    whose tail bytes spell "\0ninebot" in ASCII, plus the Segway company
-  //    ID (0x0810). Used to verify the scan-time Ninebot detector renders a
-  //    confident "Ninebot" badge in the device list.
+  //    ID (0x0810). Implements a working slice of the Ninebot wire protocol
+  //    (auth handshake + register reads) via `buildNinebotMockServices`, so
+  //    the telemetry tiles in the Ninebot screen show live values against
+  //    this peripheral in the web preview.
   {
     device: {
       deviceId: "AA:BB:CC:00:00:06", name: "Ninebot_Max_5F2A", rssi: -63,
       serviceUuids: ["6e400001-b5a3-f393-e0a9-006e696e65626f74"],
       manufacturerIds: [0x0810], mock: true,
     },
-    services: [
-      {
-        uuid: "00001800-0000-1000-8000-00805f9b34fb",
-        characteristics: [
-          { uuid: "00002a00-0000-1000-8000-00805f9b34fb", properties: ["read"], value: enc.encode("Ninebot_Max_5F2A"), hint: "utf8" },
-        ],
-      },
-    ],
+    services: buildNinebotMockServices(),
   },
 
   // 6) Unnamed beacon — read-only manufacturer payload.
