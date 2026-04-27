@@ -59,6 +59,9 @@ export function useScooter() {
 
       const info = await scooter.readInfo();
       store.setInfo(info);
+      // Persist (or refresh) the paired profile keyed by BLE address so the
+      // user can re-connect with one tap from the Connect screen.
+      upsertPairedProfile({ deviceId: device.deviceId, name: device.name }, info);
       // start telemetry polling
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(async () => {
