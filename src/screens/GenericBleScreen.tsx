@@ -232,6 +232,7 @@ export function GenericBleScreen() {
     setConnState("connecting");
     setConnError(null);
     setServices([]);
+    pushLog("info", `Connect requested → ${d.name || d.deviceId.slice(0, 17)}`);
 
     const ac = new AbortController();
     connectAbortRef.current = ac;
