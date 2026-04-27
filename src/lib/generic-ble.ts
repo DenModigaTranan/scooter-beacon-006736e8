@@ -312,6 +312,8 @@ function buildNinebotMockServices(): MockService[] {
 }
 
 
+/**
+ * Pre-built mock catalog. Each entry models a distinct device class so the
  * preview exercises read-only metadata, periodic telemetry notifications,
  * and writable control points.
  */
