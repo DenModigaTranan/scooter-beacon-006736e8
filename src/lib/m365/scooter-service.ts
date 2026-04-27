@@ -88,6 +88,22 @@ export interface HandshakeResult {
 
 const isNative = () => Capacitor.isNativePlatform();
 
+/**
+ * Error thrown when a flash is interrupted by an abort or safety guard.
+ *
+ * - `phase: "safe"`   → no chunks were written; the device is untouched.
+ * - `phase: "unsafe"` → at least one chunk was sent; the firmware is now
+ *   partial and the user MUST reflash before power-cycling.
+ */
+export class FlashAbortError extends Error {
+  readonly phase: "safe" | "unsafe";
+  constructor(reason: string, phase: "safe" | "unsafe") {
+    super(reason);
+    this.name = "FlashAbortError";
+    this.phase = phase;
+  }
+}
+
 export class ScooterService {
   private connectedId: string | null = null;
   private rxBuffer: number[] = [];
