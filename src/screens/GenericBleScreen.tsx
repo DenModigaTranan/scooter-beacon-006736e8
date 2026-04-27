@@ -426,13 +426,16 @@ export function GenericBleScreen() {
       const msg = e instanceof Error ? e.message : String(e);
       setConnectPhase({ kind: "idle" });
       if (msg === "cancelled") {
-        // cancelConnect() already wrote disconnected/error message.
+        // cancelConnect() already wrote the "Cancelled by user" entry; here
+        // we add the wrap-up summary so the log still ends with totals.
+        emitSummary("cancelled");
         return;
       }
       setConnError(msg);
       setConnState("error");
       pushLog("attempt-fail", `Connect sequence failed: ${msg}`);
       try { await genericBle.disconnect(); } catch { /* ignore */ }
+      emitSummary("failed");
     } finally {
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
       connectInFlightRef.current = false;
