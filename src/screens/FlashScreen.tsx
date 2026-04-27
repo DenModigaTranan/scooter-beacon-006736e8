@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { useScooter } from "@/hooks/use-scooter";
 import { usePhoneBattery } from "@/hooks/use-phone-battery";
@@ -20,6 +19,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { FlashStepList, type Phase, type PhaseId, type PhaseState } from "@/components/FlashStepList";
+import { FlashLogConsole } from "@/components/FlashLogConsole";
+import { formatBytes, formatDuration, formatRate } from "@/lib/format";
 
 type Target = "DRV" | "BMS" | "BLE";
 type Step = 1 | 2 | 3 | 4 | 5;
