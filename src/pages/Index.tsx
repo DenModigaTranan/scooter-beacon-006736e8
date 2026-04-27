@@ -42,6 +42,7 @@ const Index = () => {
         right={<StatusBadge state={state} />}
       />
       <main className="max-w-md mx-auto">
+        <ProfileBanner />
         {tab === "dashboard" && <DashboardScreen />}
         {tab === "info" && <InfoScreen />}
         {tab === "flash" && <FlashScreen />}
