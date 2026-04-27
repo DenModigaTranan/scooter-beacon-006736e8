@@ -8,6 +8,7 @@ import { CatalogScreen } from "@/screens/CatalogScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { DisclaimerScreen, useDisclaimerAccepted } from "@/screens/DisclaimerScreen";
 import { ProfileSelectScreen } from "@/screens/ProfileSelectScreen";
+import { GenericBleScreen } from "@/screens/GenericBleScreen";
 import { HeaderBar, TabBar, type TabKey } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProfileBanner } from "@/components/ProfileBanner";
@@ -32,6 +33,22 @@ const Index = () => {
 
   if (!accepted) return <DisclaimerScreen onAccept={accept} />;
   if (!profile) return <ProfileSelectScreen onContinue={() => setProfileTick((t) => t + 1)} />;
+
+  // Generic BLE profile uses its own dedicated scanner UI — it never goes
+  // through the M365-specific ConnectScreen / tabbed dashboard since there's
+  // no protocol-level info to read.
+  if (profile === "generic-ble") {
+    const profileLabel = getProfileMeta(profile).shortLabel;
+    return (
+      <div className="min-h-screen pb-6">
+        <HeaderBar title="Generic BLE" profileLabel={profileLabel} />
+        <main className="max-w-md mx-auto">
+          <GenericBleScreen />
+        </main>
+      </div>
+    );
+  }
+
   if (state !== "connected") return <ConnectScreen />;
 
   const profileLabel = getProfileMeta(profile).shortLabel;
