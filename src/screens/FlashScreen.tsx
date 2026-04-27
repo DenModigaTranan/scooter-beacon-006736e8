@@ -585,6 +585,57 @@ export function FlashScreen() {
               </div>
             )}
 
+            {handshake?.ok && handshake.cloneMode && (
+              <div className="panel mt-3 p-4 border-warning/40">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4 text-warning" />
+                  <div className="mono text-xs tracking-widest text-warning">
+                    CLONE-TOLERANT HANDSHAKE
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-2">
+                  This device does not expose the strict Xiaomi M365 GATT layout.
+                  The handshake matched a community-known variant
+                  {" "}<span className="mono text-warning">{handshake.variantId}</span>{" "}
+                  and the protocol probe succeeded, so the device speaks M365 framing —
+                  but flashing aftermarket / clone hardware is best-effort and
+                  may behave differently than a genuine scooter.
+                </p>
+                {handshake.warnings.length > 0 && (
+                  <ul className="mb-3 space-y-1">
+                    {handshake.warnings.map((w) => (
+                      <li key={w} className="text-[11px] mono text-warning/90 leading-snug">
+                        • {w}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {handshake.resolved && (
+                  <div className="mb-3 panel p-2 bg-background/40">
+                    <div className="text-[10px] mono uppercase tracking-widest text-muted-foreground mb-1">
+                      Resolved GATT
+                    </div>
+                    <div className="text-[11px] mono text-foreground/80 break-all leading-relaxed">
+                      svc {handshake.resolved.service.slice(0, 8)}…<br />
+                      rx&nbsp; {handshake.resolved.rx.slice(0, 8)}…<br />
+                      tx&nbsp; {handshake.resolved.tx.slice(0, 8)}…
+                    </div>
+                  </div>
+                )}
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cloneAck}
+                    onChange={(e) => setCloneAck(e.target.checked)}
+                    className="mt-0.5 accent-warning"
+                  />
+                  <span className="text-xs text-muted-foreground leading-relaxed">
+                    I understand this is a clone / non-genuine device and accept the elevated brick risk.
+                  </span>
+                </label>
+              </div>
+            )}
+
             <div className="panel mt-3 p-4 border-warning/40">
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="w-4 h-4 text-warning" />
