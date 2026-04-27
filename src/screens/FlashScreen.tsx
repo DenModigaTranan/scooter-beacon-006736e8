@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { useScooter } from "@/hooks/use-scooter";
 import { usePhoneBattery } from "@/hooks/use-phone-battery";
@@ -20,6 +19,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { FlashStepList, type Phase, type PhaseId, type PhaseState } from "@/components/FlashStepList";
+import { FlashLogConsole } from "@/components/FlashLogConsole";
+import { formatBytes, formatDuration, formatRate } from "@/lib/format";
 
 type Target = "DRV" | "BMS" | "BLE";
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -47,12 +49,23 @@ export function FlashScreen() {
   const [progress, setProgress] = useState(0);
   const [bytesWritten, setBytesWritten] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
+  const [downloadedBytes, setDownloadedBytes] = useState(0);
   const [flashing, setFlashing] = useState(false);
   const [flashStatus, setFlashStatus] = useState<string>("idle");
   const [safeToAbort, setSafeToAbort] = useState(true);
   const [flashResult, setFlashResult] = useState<"success" | "error" | "aborted-safe" | "aborted-unsafe" | null>(null);
   const [flashError, setFlashError] = useState<string>("");
   const [retryingHandshake, setRetryingHandshake] = useState(false);
+
+  // Per-phase status for the live progress checklist + final summary.
+  const [phaseStates, setPhaseStates] = useState<Record<PhaseId, PhaseState>>({
+    download: "pending", arm: "pending", write: "pending", verify: "pending", done: "pending",
+  });
+  // Real-time clock source so elapsed/ETA/throughput re-render every ~250ms.
+  const [now, setNow] = useState<number>(() => Date.now());
+  const startedAtRef = useRef<number | null>(null);
+  const writeStartedAtRef = useRef<number | null>(null);
+  const finishedAtRef = useRef<number | null>(null);
 
   // Confirmation dialogs
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -69,6 +82,51 @@ export function FlashScreen() {
   useEffect(() => { telemetryRef.current = telemetry; }, [telemetry]);
   useEffect(() => { phoneBatteryRef.current = phoneBattery; }, [phoneBattery]);
   useEffect(() => { connStateRef.current = connState; }, [connState]);
+
+  // Tick a clock while the live progress view is on screen so elapsed/ETA
+  // re-render even when no flash event has fired in the last second.
+  useEffect(() => {
+    if (step !== 4) return;
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [step]);
+
+  // Derived live readouts: elapsed, throughput (chunks/sec window), ETA.
+  const liveStats = useMemo(() => {
+    const startedAt = startedAtRef.current ?? now;
+    const elapsedMs = Math.max(0, now - startedAt);
+    const writeStartedAt = writeStartedAtRef.current;
+    let rate = 0; // bytes/sec, computed only over the writing window
+    let etaMs = 0;
+    if (writeStartedAt && bytesWritten > 0) {
+      const writeElapsed = Math.max(1, now - writeStartedAt);
+      rate = (bytesWritten / writeElapsed) * 1000;
+      const remaining = Math.max(0, totalBytes - bytesWritten);
+      etaMs = rate > 0 ? (remaining / rate) * 1000 : 0;
+    }
+    return { elapsedMs, rate, etaMs };
+  }, [now, bytesWritten, totalBytes]);
+
+  // Build the phase list shown on screen 4 / 5.
+  const phases: Phase[] = useMemo(() => {
+    const downloadDetail = customFile
+      ? `${customFile.name} · ${formatBytes(customFile.bytes.length)}`
+      : selected?.url
+        ? `${selected.version} · ${formatBytes(downloadedBytes || selected.size)}`
+        : selected
+          ? `${selected.version} (catalog)`
+          : "—";
+    const writeDetail = totalBytes > 0
+      ? `${formatBytes(bytesWritten)} / ${formatBytes(totalBytes)} · ${formatRate(liveStats.rate)}`
+      : "—";
+    return [
+      { id: "download", label: "Fetch firmware", state: phaseStates.download, detail: downloadDetail },
+      { id: "arm",      label: `Arm ${target} update mode`, state: phaseStates.arm },
+      { id: "write",    label: "Write firmware chunks", state: phaseStates.write, detail: writeDetail },
+      { id: "verify",   label: "Finalize & verify", state: phaseStates.verify },
+      { id: "done",     label: "Complete", state: phaseStates.done },
+    ];
+  }, [phaseStates, target, customFile, selected, downloadedBytes, totalBytes, bytesWritten, liveStats.rate]);
 
   const catalogQ = useQuery({ queryKey: ["fw-catalog"], queryFn: ({ signal }) => fetchCatalog(signal) });
 
@@ -176,17 +234,29 @@ export function FlashScreen() {
     clearLog();
     setProgress(0);
     setBytesWritten(0);
+    setDownloadedBytes(0);
     setSafeToAbort(true);
     setFlashStatus("preparing");
     setFlashResult(null);
     setFlashError("");
+    setPhaseStates({
+      download: "active", arm: "pending", write: "pending", verify: "pending", done: "pending",
+    });
+
+    const startedAt = Date.now();
+    startedAtRef.current = startedAt;
+    writeStartedAtRef.current = null;
+    finishedAtRef.current = null;
+    setNow(startedAt);
 
     const ac = new AbortController();
     abortRef.current = ac;
 
     let firmwareBytes: Uint8Array;
     if (customFile) {
+      appendLog(`> using local file: ${customFile.name} (${formatBytes(customFile.bytes.length)})`);
       firmwareBytes = customFile.bytes;
+      setDownloadedBytes(customFile.bytes.length);
     } else if (selected) {
       try {
         if (selected.url) {
@@ -194,17 +264,23 @@ export function FlashScreen() {
           const r = await fetch(selected.url, { signal: ac.signal });
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           firmwareBytes = new Uint8Array(await r.arrayBuffer());
+          setDownloadedBytes(firmwareBytes.length);
+          appendLog(`> downloaded ${formatBytes(firmwareBytes.length)}`);
         } else {
           appendLog(`! no URL — using simulated buffer (${selected.size}B)`);
           firmwareBytes = new Uint8Array(selected.size);
+          setDownloadedBytes(firmwareBytes.length);
         }
       } catch (e) {
+        finishedAtRef.current = Date.now();
         if (ac.signal.aborted) {
           appendLog(`! aborted before flash`);
+          setPhaseStates((s) => ({ ...s, download: "fail" }));
           setFlashResult("aborted-safe");
           setFlashError("Aborted before any data was written.");
         } else {
           appendLog(`! download failed: ${e}`);
+          setPhaseStates((s) => ({ ...s, download: "fail" }));
           toast.error("Download failed");
           setFlashResult("error");
           setFlashError(String(e));
@@ -219,6 +295,7 @@ export function FlashScreen() {
     }
 
     setTotalBytes(firmwareBytes.length);
+    setPhaseStates((s) => ({ ...s, download: "ok", arm: "active" }));
 
     try {
       for await (const p of scooter.flash(target, firmwareBytes, {
@@ -230,19 +307,48 @@ export function FlashScreen() {
         setBytesWritten(p.bytes);
         setFlashStatus(p.status);
         setSafeToAbort(p.safeToAbort);
+
+        // Map service-level status → phase checklist.
+        if (p.status === "arming") {
+          setPhaseStates((s) => ({ ...s, arm: "active" }));
+        } else if (p.status === "writing") {
+          if (writeStartedAtRef.current === null) writeStartedAtRef.current = Date.now();
+          setPhaseStates((s) => ({ ...s, arm: "ok", write: "active" }));
+        } else if (p.status === "done") {
+          // service emits one final "done" yield AFTER FINALIZE — treat as
+          // verify+done in one go (the FINALIZE write happened just before).
+          setPhaseStates((s) => ({ ...s, write: "ok", verify: "ok", done: "ok" }));
+        }
       }
+      finishedAtRef.current = Date.now();
       setFlashResult("success");
       setStep(5);
       toast.success(`${target} flashed`);
     } catch (e) {
+      finishedAtRef.current = Date.now();
       if (e instanceof FlashAbortError) {
         appendLog(`! ABORT (${e.phase}): ${e.message}`);
+        // Mark whichever phase was active as failed; leave earlier phases ok.
+        setPhaseStates((s) => {
+          const next = { ...s };
+          (Object.keys(next) as PhaseId[]).forEach((id) => {
+            if (next[id] === "active") next[id] = "fail";
+          });
+          return next;
+        });
         setFlashResult(e.phase === "safe" ? "aborted-safe" : "aborted-unsafe");
         setFlashError(e.message);
         if (e.phase === "safe") toast(`Flash aborted safely`);
         else toast.error(`Flash aborted mid-write — REFLASH IMMEDIATELY`);
       } else {
         appendLog(`! ERROR ${e}`);
+        setPhaseStates((s) => {
+          const next = { ...s };
+          (Object.keys(next) as PhaseId[]).forEach((id) => {
+            if (next[id] === "active") next[id] = "fail";
+          });
+          return next;
+        });
         setFlashResult("error");
         setFlashError(String(e));
         toast.error("Flash failed");
@@ -256,9 +362,15 @@ export function FlashScreen() {
 
   const reset = () => {
     setStep(1); setSelected(null); setCustomFile(null);
-    setProgress(0); setBytesWritten(0); setTotalBytes(0);
+    setProgress(0); setBytesWritten(0); setTotalBytes(0); setDownloadedBytes(0);
     setFlashResult(null); setConfirmText(""); setRiskAck(false);
     setFlashStatus("idle"); setFlashError("");
+    setPhaseStates({
+      download: "pending", arm: "pending", write: "pending", verify: "pending", done: "pending",
+    });
+    startedAtRef.current = null;
+    writeStartedAtRef.current = null;
+    finishedAtRef.current = null;
   };
 
   return (
@@ -462,20 +574,33 @@ export function FlashScreen() {
         {step === 4 && (
           <motion.div key="s4" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
             <SectionTitle>4. Flashing {target}…</SectionTitle>
+
+            {/* Headline progress: % + bytes + elapsed/rate/ETA */}
             <div className="panel-glow scanline p-5 mt-3">
               <div className="flex items-end justify-between mb-2">
                 <div className="readout text-4xl">{Math.round(progress * 100)}%</div>
-                <div className="mono text-[10px] text-muted-foreground tracking-widest">
-                  {(bytesWritten / 1024).toFixed(1)} / {(totalBytes / 1024).toFixed(1)} KB
+                <div className="text-right">
+                  <div className="mono text-[10px] text-muted-foreground tracking-widest">
+                    {formatBytes(bytesWritten)} / {formatBytes(totalBytes)}
+                  </div>
+                  <div className="mono text-[10px] text-muted-foreground tracking-widest mt-0.5">
+                    {formatRate(liveStats.rate)}
+                    {liveStats.etaMs > 0 && phaseStates.write === "active" && ` · ETA ${formatDuration(liveStats.etaMs)}`}
+                  </div>
                 </div>
               </div>
               <Progress value={progress * 100} className="h-2" />
               <div className="mt-1 flex items-center justify-between mono text-[10px] text-muted-foreground">
-                <span>{flashStatus.toUpperCase()}</span>
+                <span>{flashStatus.toUpperCase()} · {formatDuration(liveStats.elapsedMs)}</span>
                 <span className={safeToAbort ? "text-primary-glow" : "text-warning"}>
                   {safeToAbort ? "SAFE TO ABORT" : "DO NOT POWER OFF"}
                 </span>
               </div>
+            </div>
+
+            {/* Per-step checklist */}
+            <div className="mt-3">
+              <FlashStepList phases={phases} />
             </div>
 
             {/* Live safety strip — re-renders every telemetry tick. */}
@@ -500,13 +625,8 @@ export function FlashScreen() {
               {safeToAbort ? "ABORT (SAFE)" : "ABORT (UNSAFE)"}
             </Button>
 
-            <div className="panel mt-3 p-3">
-              <div className="mono text-[10px] text-muted-foreground tracking-widest mb-2">CONSOLE</div>
-              <ScrollArea className="h-44">
-                <pre className="mono text-[11px] leading-relaxed text-primary-glow whitespace-pre-wrap">
-                  {flashLog.join("\n") || "(waiting…)"}
-                </pre>
-              </ScrollArea>
+            <div className="mt-3">
+              <FlashLogConsole lines={flashLog} height="h-44" />
             </div>
           </motion.div>
         )}
@@ -517,15 +637,23 @@ export function FlashScreen() {
               result={flashResult}
               target={target}
               error={flashError}
+              elapsedMs={
+                startedAtRef.current
+                  ? (finishedAtRef.current ?? Date.now()) - startedAtRef.current
+                  : 0
+              }
+              bytesWritten={bytesWritten}
+              totalBytes={totalBytes}
               onDone={reset}
             />
-            <div className="panel mt-3 p-3">
-              <div className="mono text-[10px] text-muted-foreground tracking-widest mb-2">CONSOLE</div>
-              <ScrollArea className="h-32">
-                <pre className="mono text-[11px] leading-relaxed text-primary-glow whitespace-pre-wrap">
-                  {flashLog.join("\n")}
-                </pre>
-              </ScrollArea>
+
+            {/* Final phase summary so the user can see exactly which step failed. */}
+            <div className="mt-3">
+              <FlashStepList phases={phases} />
+            </div>
+
+            <div className="mt-3">
+              <FlashLogConsole lines={flashLog} height="h-32" follow={false} />
             </div>
           </motion.div>
         )}
@@ -624,13 +752,24 @@ function Mini({ label, value, warn }: { label: string; value: string; warn?: boo
 }
 
 function ResultCard({
-  result, target, error, onDone,
+  result, target, error, elapsedMs, bytesWritten, totalBytes, onDone,
 }: {
   result: "success" | "error" | "aborted-safe" | "aborted-unsafe" | null;
   target: Target;
   error: string;
+  elapsedMs: number;
+  bytesWritten: number;
+  totalBytes: number;
   onDone: () => void;
 }) {
+  const summary = (
+    <div className="mt-3 grid grid-cols-3 gap-2 w-full text-center">
+      <SummaryStat label="Written" value={`${formatBytes(bytesWritten)}${totalBytes ? ` / ${formatBytes(totalBytes)}` : ""}`} />
+      <SummaryStat label="Elapsed" value={formatDuration(elapsedMs)} />
+      <SummaryStat label="Target" value={target} />
+    </div>
+  );
+
   if (result === "success") {
     return (
       <div className="panel-glow p-6 flex flex-col items-center text-center">
@@ -641,6 +780,7 @@ function ResultCard({
         <p className="text-sm text-muted-foreground mt-2">
           {target} on your scooter is now running new firmware. Power-cycle the scooter to fully apply.
         </p>
+        {summary}
         <Button onClick={onDone} className="mt-5 mono tracking-widest">DONE</Button>
       </div>
     );
@@ -655,6 +795,7 @@ function ResultCard({
         <p className="text-sm text-muted-foreground mt-2">
           No data was written to the scooter. {error && <span className="block mt-1 text-xs">Reason: {error}</span>}
         </p>
+        {summary}
         <Button onClick={onDone} className="mt-5 mono tracking-widest">DONE</Button>
       </div>
     );
@@ -671,6 +812,7 @@ function ResultCard({
           Stay connected and reflash {target} immediately.
         </p>
         {error && <p className="text-[11px] text-muted-foreground mt-2">Reason: {error}</p>}
+        {summary}
         <Button onClick={onDone} className="mt-5 mono tracking-widest">REFLASH</Button>
       </div>
     );
@@ -686,7 +828,17 @@ function ResultCard({
         Don't power off. Reconnect and retry the flash to recover the scooter.
       </p>
       {error && <p className="text-[11px] text-muted-foreground mt-2">Reason: {error}</p>}
+      {summary}
       <Button onClick={onDone} className="mt-5 mono tracking-widest">DONE</Button>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border p-2">
+      <div className="mono text-[9px] tracking-widest text-muted-foreground">{label}</div>
+      <div className="mono text-xs mt-0.5 truncate">{value}</div>
     </div>
   );
 }
