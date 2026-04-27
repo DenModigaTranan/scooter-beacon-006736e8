@@ -492,6 +492,26 @@ class GenericBleService {
       }
       await new Promise((r) => setTimeout(r, withResponse ? 90 : 30));
       c.value = new Uint8Array(value);
+      // Request/response hook: lets a writable char synthesize a reply on
+      // any sibling notify characteristic. We resolve by service+char on
+      // every push so adding new mock characteristics is local to the
+      // catalog entry — no plumbing here.
+      if (c.onWrite) {
+        const deviceId = this.connectedId;
+        const pushNotify = (replyCharUuid: string, bytes: Uint8Array) => {
+          const replyChar = findMockChar(p, serviceUuid, replyCharUuid);
+          if (!replyChar) return;
+          replyChar.value = new Uint8Array(bytes);
+          const key = charKey(serviceUuid, replyCharUuid);
+          const compositeKey = `${deviceId}::${key}`;
+          const out = new Uint8Array(bytes);
+          this.mockListeners.get(compositeKey)?.forEach((l) => {
+            try { l(out, deviceId, key); } catch { /* swallow */ }
+          });
+        };
+        try { c.onWrite(new Uint8Array(value), { pushNotify }); }
+        catch { /* swallow — mock-only diagnostic */ }
+      }
       return;
     }
     const dv = new DataView(value.buffer, value.byteOffset, value.byteLength);
