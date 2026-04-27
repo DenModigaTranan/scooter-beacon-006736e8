@@ -2143,15 +2143,39 @@ function DeviceRow({
  */
 function CharacteristicRow({
   deviceId, serviceUuid, char,
+  modelAllowsRead, modelAllowsWrite, modelLabel,
 }: {
   deviceId: string;
   serviceUuid: string;
   char: GenericCharInfo;
+  // Capability gating from the active Ninebot/Segway model. `null` means
+  // "no model is governing this row" (either nothing's connected, or the
+  // device wasn't recognised as a known scooter) — in which case the row
+  // falls back to the GATT-property-only behaviour. `false` means the
+  // model exists but explicitly doesn't expose any read/write commands;
+  // the corresponding control is disabled with an explanatory tooltip.
+  modelAllowsRead: boolean | null;
+  modelAllowsWrite: boolean | null;
+  // Short label of the active model, used in tooltips so the user can
+  // see *why* a button is disabled at a glance.
+  modelLabel: string | null;
 }) {
-  const canRead = char.properties.includes("read");
-  const canWrite = char.properties.includes("write") || char.properties.includes("writewithoutresponse");
+  // GATT-level capability: what the peripheral itself supports per its
+  // declared characteristic properties.
+  const gattCanRead = char.properties.includes("read");
+  const gattCanWrite = char.properties.includes("write") || char.properties.includes("writewithoutresponse");
   const writeAcked = char.properties.includes("write");
   const canNotify = char.properties.includes("notify") || char.properties.includes("indicate");
+
+  // Effective capability: GATT property AND model capability (when a
+  // model is in effect). We hide a button entirely when GATT doesn't
+  // support it; we *disable* it (rather than hiding) when only the model
+  // is the blocker so the user can see what the device exposes vs what
+  // the model gates off — disappearing controls would be more confusing.
+  const modelBlocksRead = modelAllowsRead === false;
+  const modelBlocksWrite = modelAllowsWrite === false;
+  const canRead = gattCanRead;
+  const canWrite = gattCanWrite;
 
   const hint = getMockHint(deviceId, serviceUuid, char.uuid) ?? "hex";
 
