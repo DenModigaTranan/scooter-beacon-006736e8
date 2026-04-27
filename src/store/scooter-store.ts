@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { DiscoveredDevice, ScooterInfo, Telemetry } from "@/lib/m365/scooter-service";
+import type { FirmwareEntry } from "@/lib/m365/catalog";
 
 export type ConnectionState = "idle" | "scanning" | "connecting" | "connected" | "disconnected" | "error";
 
@@ -11,6 +12,8 @@ interface ScooterStore {
   telemetry: Telemetry | null;
   errorMessage: string | null;
   flashLog: string[];
+  /** A firmware entry queued from the Catalog screen for the Flash flow to pick up. */
+  pendingFlash: FirmwareEntry | null;
 
   setState: (s: ConnectionState) => void;
   addDevice: (d: DiscoveredDevice) => void;
@@ -21,6 +24,7 @@ interface ScooterStore {
   setError: (msg: string | null) => void;
   appendLog: (line: string) => void;
   clearLog: () => void;
+  setPendingFlash: (fw: FirmwareEntry | null) => void;
 }
 
 export const useScooterStore = create<ScooterStore>((set) => ({
@@ -31,6 +35,7 @@ export const useScooterStore = create<ScooterStore>((set) => ({
   telemetry: null,
   errorMessage: null,
   flashLog: [],
+  pendingFlash: null,
 
   setState: (s) => set({ state: s }),
   addDevice: (d) =>
@@ -42,4 +47,5 @@ export const useScooterStore = create<ScooterStore>((set) => ({
   setError: (msg) => set({ errorMessage: msg, state: msg ? "error" : "idle" }),
   appendLog: (line) => set((p) => ({ flashLog: [...p.flashLog.slice(-500), line] })),
   clearLog: () => set({ flashLog: [] }),
+  setPendingFlash: (fw) => set({ pendingFlash: fw }),
 }));
