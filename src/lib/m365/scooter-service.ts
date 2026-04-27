@@ -211,11 +211,11 @@ export class ScooterService {
     }
 
     log("> handshake: discovering GATT services…");
-    try { await BleClient.discoverServices({ deviceId: this.connectedId }); } catch { /* some platforms auto-discover */ }
+    try { await BleClient.discoverServices(this.connectedId); } catch { /* some platforms auto-discover */ }
 
     let services: Array<{ uuid: string; characteristics: Array<{ uuid: string; properties: Record<string, boolean> }> }> = [];
     try {
-      const raw = await BleClient.getServices({ deviceId: this.connectedId });
+      const raw = await BleClient.getServices(this.connectedId);
       services = (raw ?? []).map((s) => ({
         uuid: String(s.uuid).toLowerCase(),
         characteristics: (s.characteristics ?? []).map((c) => ({
