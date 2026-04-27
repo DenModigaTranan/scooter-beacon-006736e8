@@ -750,9 +750,15 @@ function formatRelative(ts: number, now: number): string {
   return `${hr}h ago`;
 }
 
-// ============================================================================
-// Sub-components
-// ============================================================================
+/**
+ * Compact ms → "Xms" / "X.Ys" formatter for log entries. Sub-second values
+ * stay in ms for precision on fast handshakes; anything ≥1s collapses to one
+ * decimal so "Attempt 2 took 7.6s" reads naturally.
+ */
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
 
 function ScanStateChip({ state, count }: { state: ScanState; count: number }) {
