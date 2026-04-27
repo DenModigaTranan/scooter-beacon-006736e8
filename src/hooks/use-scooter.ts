@@ -95,6 +95,12 @@ export function useScooter() {
     store.setInfo(info);
   }, [store]);
 
+  const rerunHandshake = useCallback(async () => {
+    const hs = await scooter.handshake({ onLog: store.appendLog });
+    store.setHandshake(hs);
+    return hs;
+  }, [store]);
+
   return {
     ...store,
     scan,
@@ -102,6 +108,7 @@ export function useScooter() {
     disconnect,
     writeSerialAndVerify,
     refreshInfo,
+    rerunHandshake,
     isNative: Capacitor.isNativePlatform(),
   };
 }
