@@ -1,3 +1,5 @@
+import { BOARD_ID_TO_NAME } from "./models";
+
 /**
  * Xiaomi M365 family BLE protocol.
  *
@@ -205,14 +207,7 @@ export function decodeVersion(word: number): string {
  * a handful of values; unknown ids fall back to a hex string so the user can
  * still identify and report the board.
  */
-const MODEL_NAMES: Record<number, string> = {
-  0x0001: "M365 (1st gen)",
-  0x0002: "M365 Pro",
-  0x0003: "Essential",
-  0x0004: "1S",
-  0x0005: "Pro 2",
-  0x0006: "3 / Lite",
-};
+const MODEL_NAMES: Record<number, string> = BOARD_ID_TO_NAME;
 export function decodeModelId(word: number): string {
   if (word === 0 || word === 0xffff) return "—";
   const name = MODEL_NAMES[word];

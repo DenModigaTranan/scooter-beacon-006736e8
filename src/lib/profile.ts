@@ -23,14 +23,16 @@ export const PROFILES: ProfileMeta[] = [
     key: "xiaomi-m365",
     label: "Xiaomi M365 family",
     shortLabel: "M365",
-    description: "M365, Pro, 1S, Essential, Pro 2 — full BLE protocol support.",
+    description:
+      "M365, Pro, 1S, Essential, Pro 2, Mi 3 / 3 Lite, Mi 4 / 4 Pro / 4 Lite / 4 Ultra and common clones.",
     status: "supported",
   },
   {
     key: "ninebot",
     label: "Ninebot / Segway",
     shortLabel: "Ninebot",
-    description: "ES, Max, F-series. Encrypted protocol — implementation in progress.",
+    description:
+      "ES1–ES4, Max G30 / G30D / G30LP / G30P / G2, F20–F40, F2 / Plus / Pro, E22 / E25 / E45, D-series, GT1 / GT2.",
     status: "coming-soon",
   },
   {
