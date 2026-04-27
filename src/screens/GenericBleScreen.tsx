@@ -187,20 +187,19 @@ export function GenericBleScreen() {
                 No services exposed (or discovery not supported on this platform).
               </div>
             )}
-            <ul className="space-y-1.5">
+            <ul className="space-y-2">
               {services.map((s) => (
                 <li key={s.uuid} className="rounded-md bg-secondary/40 p-2">
-                  <div className="mono text-[11px] truncate">{shortUuid(s.uuid)}</div>
+                  <div className="mono text-[11px] truncate mb-1.5">{shortUuid(s.uuid)}</div>
                   {s.characteristics.length > 0 && (
-                    <ul className="mt-1.5 space-y-0.5 pl-3 border-l border-border/50">
+                    <ul className="space-y-1.5 pl-2 border-l border-border/50">
                       {s.characteristics.map((c) => (
-                        <li key={c.uuid} className="flex items-center justify-between gap-2">
-                          <span className="mono text-[10px] text-muted-foreground truncate">
-                            {shortUuid(c.uuid)}
-                          </span>
-                          <span className="mono text-[9px] text-muted-foreground/80 tracking-widest uppercase shrink-0">
-                            {c.properties.join("·") || "—"}
-                          </span>
+                        <li key={c.uuid}>
+                          <CharacteristicRow
+                            deviceId={connectedDevice?.deviceId ?? ""}
+                            serviceUuid={s.uuid}
+                            char={c}
+                          />
                         </li>
                       ))}
                     </ul>
