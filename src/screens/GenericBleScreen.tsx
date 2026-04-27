@@ -915,7 +915,7 @@ function FailureSummaryChip({
   }, [data]);
 
   if (!data) return null;
-  const { entry, attempt, reason, isTimeout, totalLabel, ended, failures } = data;
+  const { entry, attempt, reason, totalLabel, ended, failures } = data;
   const ageSec = Math.max(0, Math.round((now - entry.at) / 1000));
   const ageLabel =
     ageSec < 1 ? "just now"
@@ -927,14 +927,18 @@ function FailureSummaryChip({
   // and unstripped message for bug reports.
   const expandable = failures.length >= 1;
 
+  // Pick icon + headline + tone from the latest failure's kind & cleaned
+  // reason text. This is what makes a "timed out" run read differently from
+  // an auth/permission denial or a peer disconnect mid-handshake.
+  const cls = classifyFailure(entry.kind, reason);
+  const tone = FAILURE_TONE[cls.tone];
+  const Icon = cls.icon;
+
   return (
     <motion.section
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn(
-        "panel border overflow-hidden",
-        isTimeout ? "border-warning/40 bg-warning/5" : "border-destructive/40 bg-destructive/5",
-      )}
+      className={cn("panel border overflow-hidden", tone.border, tone.bg)}
       role="status"
       aria-live="polite"
     >
@@ -951,19 +955,16 @@ function FailureSummaryChip({
       >
         <div className={cn(
           "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
-          isTimeout ? "bg-warning/20" : "bg-destructive/20",
+          tone.iconBg,
         )}>
-          <AlertTriangle className={cn(
-            "w-3.5 h-3.5",
-            isTimeout ? "text-warning" : "text-destructive",
-          )} />
+          <Icon className={cn("w-3.5 h-3.5", tone.icon)} />
         </div>
         <div className="min-w-0 flex-1">
           <div className={cn(
             "mono text-[10px] tracking-[0.22em] uppercase flex items-center gap-2 flex-wrap",
-            isTimeout ? "text-warning" : "text-destructive",
+            tone.header,
           )}>
-            <span>Last failure</span>
+            <span>{cls.label}</span>
             {attempt !== null && (
               <span className="text-muted-foreground/80 normal-case tracking-normal">
                 attempt {attempt}/{MAX_ATTEMPTS}
@@ -993,8 +994,8 @@ function FailureSummaryChip({
         {expandable && (
           <ChevronDown
             className={cn(
-              "w-4 h-4 mt-1 shrink-0 text-muted-foreground transition-transform",
-              isTimeout ? "text-warning/80" : "text-destructive/80",
+              "w-4 h-4 mt-1 shrink-0 transition-transform",
+              tone.icon,
               open && "rotate-180",
             )}
             aria-hidden
@@ -1010,14 +1011,12 @@ function FailureSummaryChip({
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className={cn(
-              "border-t",
-              isTimeout ? "border-warning/30" : "border-destructive/30",
-            )}
+            className={cn("border-t", tone.border)}
           >
             <div className={cn(
               "px-3 py-1.5 mono text-[9px] tracking-widest uppercase",
-              isTimeout ? "text-warning/80 bg-warning/[0.06]" : "text-destructive/80 bg-destructive/[0.06]",
+              tone.header,
+              tone.bg,
             )}>
               Failure details · current run
             </div>
