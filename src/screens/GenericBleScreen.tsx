@@ -910,9 +910,17 @@ function FailureSummaryChip({
   // (data === null) so a fresh successful run doesn't reopen with stale rows
   // the next time a failure surfaces.
   const [open, setOpen] = useState(false);
+  // Transient feedback for the Copy button: idle → copied/error → idle after
+  // ~1.5s. Mirrors the pattern used by the connection-log Copy button so the
+  // two surfaces feel the same.
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!data) setOpen(false);
   }, [data]);
+  useEffect(() => () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+  }, []);
 
   if (!data) return null;
   const { entry, attempt, reason, totalLabel, ended, failures } = data;
