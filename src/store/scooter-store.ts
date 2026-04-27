@@ -16,6 +16,8 @@ interface ScooterStore {
   pendingFlash: FirmwareEntry | null;
   /** Latest BLE GATT handshake result, or null if not yet validated. */
   handshake: HandshakeResult | null;
+  /** Extended identifiers — null until the user reads them on Info screen. */
+  extendedInfo: ExtendedDeviceInfo | null;
 
   setState: (s: ConnectionState) => void;
   addDevice: (d: DiscoveredDevice) => void;
@@ -28,6 +30,7 @@ interface ScooterStore {
   clearLog: () => void;
   setPendingFlash: (fw: FirmwareEntry | null) => void;
   setHandshake: (h: HandshakeResult | null) => void;
+  setExtendedInfo: (e: ExtendedDeviceInfo | null) => void;
 }
 
 export const useScooterStore = create<ScooterStore>((set) => ({
