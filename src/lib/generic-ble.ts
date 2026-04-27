@@ -69,6 +69,19 @@ interface MockChar {
   tick?: (prev: Uint8Array) => Uint8Array;
   /** Pretty-print hint surfaced on the UI. */
   hint?: "utf8" | "uint8" | "uint16le" | "hex";
+  /**
+   * Optional request/response hook. Invoked when the central writes to
+   * this characteristic. Use the `pushNotify` callback to push reply
+   * frames out of any sibling `notify` characteristic on the same mock
+   * peripheral — this is how the Ninebot RX→TX request/response shape
+   * is emulated without needing real BLE round-trips.
+   */
+  onWrite?: (
+    value: Uint8Array,
+    ctx: {
+      pushNotify: (charUuid: string, bytes: Uint8Array) => void;
+    },
+  ) => void;
 }
 
 interface MockService {
@@ -92,6 +105,212 @@ function u16le(n: number): Uint8Array {
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
+
+/**
+ * Build a mock Ninebot peripheral with a working slice of the public BLE
+ * protocol: 3-phase auth handshake (PRE_COMM → SET_PWD → AUTH_OK) plus
+ * register reads for battery, speed, mode, odometer, and lock — the same
+ * registers the production decoder polls. State is held in this closure so
+ * a "ride" simulation can drift between polls (battery slowly drains,
+ * speed wanders, odometer accumulates) without the catalog entry having
+ * to expose its internals.
+ *
+ * Why this lives next to the mock catalog instead of in `src/lib/ninebot/`:
+ *   the simulator IS the mock device — it speaks the same wire protocol
+ *   the production decoder consumes, and the only entry point is the
+ *   `onWrite` hook on the RX characteristic. Putting it here keeps the
+ *   "what does the preview see?" surface in one file.
+ */
+function buildNinebotMockServices(): MockService[] {
+  // Lazy import to avoid pulling the protocol module into bundles that
+  // never touch a Ninebot — the catalog is module-evaluated at startup.
+  // Synchronous require would create a cycle; we rely on the encoder
+  // helpers being pure to inline the small subset we need below.
+  const NB_SERVICE = "6e400001-b5a3-f393-e0a9-006e696e65626f74";
+  const NB_RX      = "6e400002-b5a3-f393-e0a9-006e696e65626f74";
+  const NB_TX      = "6e400003-b5a3-f393-e0a9-006e696e65626f74";
+
+  // ---- Wire helpers (kept local to avoid a circular import) ------------
+  const HDR = [0x5a, 0xa5];
+  const APP = 0x21, ESC = 0x20, BLE = 0x22;
+  const CMD_READ = 0x01, CMD_REPLY = 0x04;
+  const CMD_PRE = 0x5b, CMD_SETPWD = 0x5c, CMD_AUTH_OK = 0x5d;
+  const REG = { BATTERY: 0xb1, SPEED: 0xb5, MODE: 0x75, ODO: 0x29, LOCK: 0x70 };
+
+  const cks = (body: Uint8Array): number => {
+    let s = 0; for (let i = 0; i < body.length; i++) s += body[i];
+    return ~s & 0xffff;
+  };
+  const buildFrame = (src: number, dst: number, cmd: number, arg: number, payload: Uint8Array): Uint8Array => {
+    const body = new Uint8Array(1 + 4 + payload.length);
+    body[0] = payload.length; body[1] = src; body[2] = dst; body[3] = cmd; body[4] = arg;
+    body.set(payload, 5);
+    const c = cks(body);
+    const out = new Uint8Array(2 + body.length + 2);
+    out[0] = HDR[0]; out[1] = HDR[1];
+    out.set(body, 2);
+    out[out.length - 2] = c & 0xff;
+    out[out.length - 1] = (c >>> 8) & 0xff;
+    return out;
+  };
+  const parseFrame = (buf: Uint8Array): { src: number; dst: number; cmd: number; arg: number; payload: Uint8Array; consumed: number } | null => {
+    if (buf.length < 9) return null;
+    if (buf[0] !== HDR[0] || buf[1] !== HDR[1]) return null;
+    const len = buf[2];
+    const total = 2 + 1 + 4 + len + 2;
+    if (buf.length < total) return null;
+    const body = buf.slice(2, 2 + 1 + 4 + len);
+    const got = buf[total - 2] | (buf[total - 1] << 8);
+    if (cks(body) !== got) return null;
+    return { src: body[1], dst: body[2], cmd: body[3], arg: body[4], payload: body.slice(5), consumed: total };
+  };
+
+  // ---- Simulated rolling state ----------------------------------------
+  // Initial values picked to look like a half-charged scooter at rest;
+  // every poll cycle nudges them so the tiles visibly animate even when
+  // nothing else on the screen is updating.
+  const state = {
+    authed: false,
+    batteryPct: 73,
+    speedHundredths: 0,        // units: 0.01 km/h
+    mode: 1,                   // 0=drive, 1=eco, 2=sport
+    odoHundredths: 1284_55,    // units: 0.01 km → starts at 1284.55 km
+    locked: 1 as 0 | 1,
+    sessionKey: null as Uint8Array | null,
+    lastPollAt: Date.now(),
+  };
+
+  /** Drift the simulated values a small amount on every poll so the UI
+   *  shows something plausible without becoming a strobe. Time-based so
+   *  variations don't depend on poll cadence. */
+  const driftRide = () => {
+    const now = Date.now();
+    const dt = Math.min(2_000, now - state.lastPollAt);
+    state.lastPollAt = now;
+    // Speed: random walk in [0, 28] km/h, biased toward the previous value.
+    const target = Math.random() < 0.4 ? 0 : 12 + Math.random() * 14;
+    const cur = state.speedHundredths / 100;
+    const next = cur + (target - cur) * (dt / 1500);
+    state.speedHundredths = Math.round(Math.max(0, Math.min(28, next)) * 100);
+    // Odometer accumulates from the average speed over `dt`.
+    const avgKmh = (cur + next) / 2;
+    state.odoHundredths += Math.round((avgKmh * (dt / 3_600_000)) * 100);
+    // Battery: drain ~1% every ~45s of "ride", clamp at 5 so the tile
+    // never goes empty in a demo session.
+    if (Math.random() < dt / 45_000) {
+      state.batteryPct = Math.max(5, state.batteryPct - 1);
+    }
+  };
+
+  const replyRead = (target: number, register: number): Uint8Array | null => {
+    driftRide();
+    switch (register) {
+      case REG.BATTERY:
+        return buildFrame(target, APP, CMD_REPLY, register, Uint8Array.from([state.batteryPct]));
+      case REG.SPEED: {
+        const v = state.speedHundredths;
+        return buildFrame(target, APP, CMD_REPLY, register, Uint8Array.from([v & 0xff, (v >>> 8) & 0xff]));
+      }
+      case REG.MODE:
+        return buildFrame(target, APP, CMD_REPLY, register, Uint8Array.from([state.mode]));
+      case REG.ODO: {
+        const v = state.odoHundredths >>> 0;
+        return buildFrame(target, APP, CMD_REPLY, register, Uint8Array.from([
+          v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff,
+        ]));
+      }
+      case REG.LOCK:
+        return buildFrame(target, APP, CMD_REPLY, register, Uint8Array.from([state.locked]));
+      default:
+        return null;
+    }
+  };
+
+  // ---- RX onWrite handler — the heart of the simulator ----------------
+  // Buffers incoming bytes so the framer survives writes that span
+  // multiple ATT MTUs (real-world Ninebot frames hit 30+ bytes; small
+  // MTUs split them across two writes).
+  let rxBuffer = new Uint8Array(0);
+  const onRxWrite = (
+    value: Uint8Array,
+    ctx: { pushNotify: (charUuid: string, bytes: Uint8Array) => void },
+  ) => {
+    const merged = new Uint8Array(rxBuffer.length + value.length);
+    merged.set(rxBuffer, 0); merged.set(value, rxBuffer.length);
+    rxBuffer = merged;
+    while (rxBuffer.length > 0) {
+      const r = parseFrame(rxBuffer);
+      if (!r) {
+        // Resync: drop a byte if we don't even have a header alignment.
+        if (rxBuffer.length >= 2 && (rxBuffer[0] !== HDR[0] || rxBuffer[1] !== HDR[1])) {
+          rxBuffer = rxBuffer.slice(1);
+          continue;
+        }
+        break;
+      }
+      rxBuffer = rxBuffer.slice(r.consumed);
+      // Auth handshake — accept either order, gate register reads on it.
+      if (r.cmd === CMD_PRE && r.dst === BLE) {
+        // Echo the APP nonce back as the device nonce; production firmware
+        // would mix it into a key derivation, but for the mock we just
+        // need the shape to round-trip cleanly.
+        const deviceNonce = r.payload.length === 16
+          ? r.payload
+          : new Uint8Array(16);
+        ctx.pushNotify(NB_TX, buildFrame(BLE, APP, CMD_PRE, 0x01, deviceNonce));
+        continue;
+      }
+      if (r.cmd === CMD_SETPWD && r.dst === BLE) {
+        state.sessionKey = r.payload.length === 16 ? new Uint8Array(r.payload) : null;
+        state.authed = true;
+        ctx.pushNotify(NB_TX, buildFrame(BLE, APP, CMD_AUTH_OK, 0x00, Uint8Array.from([0x01])));
+        continue;
+      }
+      // Register reads — gated on completed auth, mirroring real firmware.
+      if (r.cmd === CMD_READ) {
+        if (!state.authed) {
+          // Silently drop pre-auth reads; the session layer's per-poll
+          // timeout will surface as "—" in the UI until the handshake
+          // lands, matching real device behaviour.
+          continue;
+        }
+        const reply = replyRead(r.dst, r.arg);
+        if (reply) ctx.pushNotify(NB_TX, reply);
+      }
+    }
+  };
+
+  return [
+    {
+      uuid: "00001800-0000-1000-8000-00805f9b34fb",
+      characteristics: [
+        { uuid: "00002a00-0000-1000-8000-00805f9b34fb", properties: ["read"], value: enc.encode("Ninebot_Max_5F2A"), hint: "utf8" },
+      ],
+    },
+    {
+      uuid: NB_SERVICE,
+      characteristics: [
+        // RX: APP → device. Writable; produces TX notifications via onWrite.
+        {
+          uuid: NB_RX,
+          properties: ["write", "writeWithoutResponse"],
+          value: u8(),
+          hint: "hex",
+          onWrite: onRxWrite,
+        },
+        // TX: device → APP. Pure notify — no tick/interval; the simulator
+        // pushes here in response to RX writes (request/response shape).
+        {
+          uuid: NB_TX,
+          properties: ["notify"],
+          value: u8(),
+          hint: "hex",
+        },
+      ],
+    },
+  ];
+}
+
 
 /**
  * Pre-built mock catalog. Each entry models a distinct device class so the
@@ -237,22 +456,17 @@ const MOCK_CATALOG: MockPeripheral[] = [
 
   // 5) Ninebot-style scooter — advertises the custom Ninebot service UUID
   //    whose tail bytes spell "\0ninebot" in ASCII, plus the Segway company
-  //    ID (0x0810). Used to verify the scan-time Ninebot detector renders a
-  //    confident "Ninebot" badge in the device list.
+  //    ID (0x0810). Implements a working slice of the Ninebot wire protocol
+  //    (auth handshake + register reads) via `buildNinebotMockServices`, so
+  //    the telemetry tiles in the Ninebot screen show live values against
+  //    this peripheral in the web preview.
   {
     device: {
       deviceId: "AA:BB:CC:00:00:06", name: "Ninebot_Max_5F2A", rssi: -63,
       serviceUuids: ["6e400001-b5a3-f393-e0a9-006e696e65626f74"],
       manufacturerIds: [0x0810], mock: true,
     },
-    services: [
-      {
-        uuid: "00001800-0000-1000-8000-00805f9b34fb",
-        characteristics: [
-          { uuid: "00002a00-0000-1000-8000-00805f9b34fb", properties: ["read"], value: enc.encode("Ninebot_Max_5F2A"), hint: "utf8" },
-        ],
-      },
-    ],
+    services: buildNinebotMockServices(),
   },
 
   // 6) Unnamed beacon — read-only manufacturer payload.
@@ -479,6 +693,26 @@ class GenericBleService {
       }
       await new Promise((r) => setTimeout(r, withResponse ? 90 : 30));
       c.value = new Uint8Array(value);
+      // Request/response hook: lets a writable char synthesize a reply on
+      // any sibling notify characteristic. We resolve by service+char on
+      // every push so adding new mock characteristics is local to the
+      // catalog entry — no plumbing here.
+      if (c.onWrite) {
+        const deviceId = this.connectedId;
+        const pushNotify = (replyCharUuid: string, bytes: Uint8Array) => {
+          const replyChar = findMockChar(p, serviceUuid, replyCharUuid);
+          if (!replyChar) return;
+          replyChar.value = new Uint8Array(bytes);
+          const key = charKey(serviceUuid, replyCharUuid);
+          const compositeKey = `${deviceId}::${key}`;
+          const out = new Uint8Array(bytes);
+          this.mockListeners.get(compositeKey)?.forEach((l) => {
+            try { l(out, deviceId, key); } catch { /* swallow */ }
+          });
+        };
+        try { c.onWrite(new Uint8Array(value), { pushNotify }); }
+        catch { /* swallow — mock-only diagnostic */ }
+      }
       return;
     }
     const dv = new DataView(value.buffer, value.byteOffset, value.byteLength);
@@ -521,10 +755,16 @@ class GenericBleService {
       set.add(listener);
 
       // Push the current value immediately so the UI doesn't sit blank
-      // until the first tick lands.
-      queueMicrotask(() => listener(new Uint8Array(c.value), deviceId, key));
+      // until the first tick lands. Skipped for request/response-style
+      // notify chars (no `tick` and no `notifyIntervalMs`) — those only
+      // emit in response to writes, and an empty initial push would just
+      // confuse a stateful framer (e.g. the Ninebot session decoder).
+      const isRequestResponse = !c.tick && c.notifyIntervalMs == null;
+      if (!isRequestResponse) {
+        queueMicrotask(() => listener(new Uint8Array(c.value), deviceId, key));
+      }
 
-      if (!this.mockTimers.has(compositeKey)) {
+      if (!isRequestResponse && !this.mockTimers.has(compositeKey)) {
         const interval = c.notifyIntervalMs ?? 1500;
         const timer = setInterval(() => {
           if (this.connectedId !== deviceId) {

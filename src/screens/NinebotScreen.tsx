@@ -1,61 +1,177 @@
 /**
  * NinebotScreen — Ninebot-specific landing route.
  *
- * Scope of this screen:
- *   • Reuse the existing Generic BLE scan/connect/retry orchestration as-is
- *     by composing <GenericBleScreen /> directly. We deliberately do NOT
- *     fork or re-implement that flow — every retry, backoff, log, and
- *     failure-classification improvement made on the generic screen
- *     applies here automatically.
- *   • Surface Ninebot-specific context above the scanner: a brief
- *     explainer of how detection works, plus a row of telemetry tiles
- *     that *will* light up once a Ninebot is connected and the
- *     authentication + decode pipeline lands.
- *
- * Telemetry status today:
- *   The Segway-Ninebot BLE protocol gates almost every register read
- *   (battery %, speed, mode, odometer, lock state) behind a 3-phase
- *   authentication handshake (PRE_COMM → SET_PWD → AUTH) and AES-128
- *   framing. That work is intentionally out of scope for this route.
- *   The tiles render as "—" placeholders with a "pending decode" hint
- *   so the layout is locked in and ready for the protocol layer to drop
- *   real values in without any UI churn.
+ * Composes <GenericBleScreen /> for the scan/connect/retry surface so every
+ * orchestration improvement on the generic flow flows through here, then
+ * layers a Ninebot-only telemetry section on top. Telemetry is driven by
+ * `useNinebotLiveTelemetry`, which watches the shared `genericBle` singleton
+ * for an active connection to a peripheral exposing the Ninebot custom GATT
+ * service. When one appears, it spins up a `NinebotSession` to run the
+ * 3-phase auth handshake and the register-poll loop; when the connection
+ * drops, it tears the session back down. The hook is the *only* place that
+ * mutates session lifecycle, so the rest of this file can stay declarative.
  */
 
-import { useMemo } from "react";
-import { Battery, Gauge, Lock, Route as RouteIcon, Zap, Info } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Battery, Gauge, Lock, Route as RouteIcon, Zap, Info, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
 import { GenericBleScreen } from "@/screens/GenericBleScreen";
 import { NinebotSupportedModels } from "@/components/NinebotSupportedModels";
+import { genericBle } from "@/lib/generic-ble";
+import { NB_GATT, formatTelemetryField, type NinebotTelemetry } from "@/lib/ninebot/protocol";
+import { NinebotSession, type NinebotSessionStatus } from "@/lib/ninebot/session";
 import { cn } from "@/lib/utils";
 
 interface TelemetryTile {
   icon: typeof Battery;
   label: string;
-  value: string;
+  field: keyof NinebotTelemetry;
   unit?: string;
   hint: string;
 }
 
+const TILES: readonly TelemetryTile[] = [
+  { icon: Battery,   label: "Battery",  field: "batteryPct", unit: "%",    hint: "state of charge" },
+  { icon: Gauge,     label: "Speed",    field: "speedKmh",   unit: "km/h", hint: "live wheel speed" },
+  { icon: Zap,       label: "Mode",     field: "mode",                     hint: "drive / eco / sport" },
+  { icon: RouteIcon, label: "Odometer", field: "odometerKm", unit: "km",   hint: "lifetime distance" },
+  { icon: Lock,      label: "Lock",     field: "locked",                   hint: "secured / unlocked" },
+];
+
 /**
- * Static placeholder set. Once the Ninebot decoder lands, this becomes a
- * derived value driven by notify-characteristic state. Kept in a hook-shaped
- * function so the wiring point is obvious to the next reader.
+ * How often we poll `genericBle.getConnectedId()` and the discovered
+ * service list to learn whether a Ninebot is currently connected. We
+ * deliberately don't subscribe to a connection event because the
+ * connection lifecycle is owned by `GenericBleScreen` — keeping this
+ * pull-based decouples the two screens entirely.
  */
-function useNinebotTelemetry(): TelemetryTile[] {
-  return useMemo(
-    () => [
-      { icon: Battery,   label: "Battery",   value: "—",   unit: "%",   hint: "awaiting auth handshake" },
-      { icon: Gauge,     label: "Speed",     value: "—",   unit: "km/h", hint: "awaiting auth handshake" },
-      { icon: Zap,       label: "Mode",      value: "—",                hint: "drive / eco / sport" },
-      { icon: RouteIcon, label: "Odometer",  value: "—",   unit: "km",  hint: "lifetime distance" },
-      { icon: Lock,      label: "Lock",      value: "—",                hint: "secured / unlocked" },
-    ],
-    [],
-  );
+const CONNECTION_POLL_MS = 600;
+
+/**
+ * Watches the shared BLE singleton and runs a Ninebot session against any
+ * connected peripheral whose GATT layout includes the Ninebot service.
+ * Returns the latest decoded telemetry plus a status string suitable for
+ * the "auth handshake" / "live" badge above the tiles.
+ */
+function useNinebotLiveTelemetry(): {
+  telemetry: NinebotTelemetry;
+  status: NinebotSessionStatus;
+  detail: string | null;
+  /** True when we believe a Ninebot is on the other end of the link. */
+  hasNinebot: boolean;
+} {
+  const [telemetry, setTelemetry] = useState<NinebotTelemetry>({});
+  const [status, setStatus] = useState<NinebotSessionStatus>("idle");
+  const [detail, setDetail] = useState<string | null>(null);
+  const [hasNinebot, setHasNinebot] = useState(false);
+  // Tracks the deviceId we've already started a session for, so the poll
+  // loop doesn't churn through start()/stop() on every tick.
+  const activeIdRef = useRef<string | null>(null);
+  const sessionRef = useRef<NinebotSession | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    /**
+     * Inspect the current GATT layout once. We can only ask about
+     * services *after* discovery has completed; while a connection is
+     * still spinning up, `discoverServices()` returns [] and we'll
+     * naturally retry on the next tick.
+     */
+    const checkAndSync = async () => {
+      const connectedId = genericBle.getConnectedId();
+      if (!connectedId) {
+        if (activeIdRef.current) await teardown();
+        if (!cancelled) {
+          setHasNinebot(false);
+          setStatus("idle");
+          setDetail(null);
+          setTelemetry({});
+        }
+        return;
+      }
+      // Don't re-discover if we're already tracking this device.
+      if (activeIdRef.current === connectedId) return;
+      let services: { uuid: string }[] = [];
+      try { services = await genericBle.discoverServices(); } catch { services = []; }
+      const hasService = services.some(
+        (s) => s.uuid.toLowerCase() === NB_GATT.SERVICE.toLowerCase(),
+      );
+      if (cancelled) return;
+      setHasNinebot(hasService);
+      if (!hasService) return;
+      // New Ninebot session — tear down any prior one (defensive — the
+      // teardown above should've already fired) and spin a fresh one.
+      await teardown();
+      activeIdRef.current = connectedId;
+      const session = new NinebotSession({
+        onStatus: (s, d) => {
+          if (cancelled) return;
+          setStatus(s);
+          setDetail(d ?? null);
+        },
+        onTelemetry: (t) => {
+          if (cancelled) return;
+          // Snapshot — the session reuses its internal object across
+          // pushes, so spreading here protects us from later mutation.
+          setTelemetry({ ...t });
+        },
+      });
+      sessionRef.current = session;
+      try { await session.start(); } catch { /* status already updated */ }
+    };
+
+    const teardown = async () => {
+      const s = sessionRef.current;
+      sessionRef.current = null;
+      activeIdRef.current = null;
+      if (s) { try { await s.stop(); } catch { /* swallow */ } }
+    };
+
+    // Run immediately on mount, then on a slow poll. CONNECTION_POLL_MS
+    // is intentionally generous — once a session is up the poll loop
+    // returns early on every tick, so the cost is negligible.
+    void checkAndSync();
+    const id = setInterval(() => { void checkAndSync(); }, CONNECTION_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      void teardown();
+    };
+  }, []);
+
+  return { telemetry, status, detail, hasNinebot };
+}
+
+/**
+ * Status pill copy + icon for the badge above the telemetry grid. Mapping
+ * lives next to the JSX that uses it so adding a new status state is a
+ * single-spot edit.
+ */
+function statusBadge(status: NinebotSessionStatus, hasNinebot: boolean):
+  { label: string; icon: typeof Loader2; cls: string; spin?: boolean } {
+  if (!hasNinebot) {
+    return { label: "No Ninebot connected", icon: Info, cls: "text-muted-foreground" };
+  }
+  switch (status) {
+    case "subscribing":
+      return { label: "Opening notify pipe", icon: Loader2, cls: "text-muted-foreground", spin: true };
+    case "authenticating":
+      return { label: "Auth handshake", icon: Loader2, cls: "text-warning", spin: true };
+    case "polling":
+      return { label: "Live", icon: ShieldCheck, cls: "text-primary-glow" };
+    case "error":
+      return { label: "Auth failed", icon: AlertTriangle, cls: "text-destructive" };
+    case "stopped":
+      return { label: "Disconnected", icon: Info, cls: "text-muted-foreground" };
+    default:
+      return { label: "Pending decode", icon: Info, cls: "text-muted-foreground" };
+  }
 }
 
 export default function NinebotScreen() {
-  const tiles = useNinebotTelemetry();
+  const { telemetry, status, detail, hasNinebot } = useNinebotLiveTelemetry();
+  const badge = useMemo(() => statusBadge(status, hasNinebot), [status, hasNinebot]);
+
   return (
     <div className="min-h-screen pb-6">
       <main className="max-w-md mx-auto px-4 pt-4 space-y-4">
@@ -73,8 +189,7 @@ export default function NinebotScreen() {
           </p>
         </header>
 
-        {/* Telemetry tiles — placeholder layout. See file header for why
-            these are stubbed today. */}
+        {/* Telemetry tiles — driven by the live session hook. */}
         <section
           aria-label="Ninebot telemetry"
           className="panel p-3 space-y-2"
@@ -84,22 +199,28 @@ export default function NinebotScreen() {
               Telemetry
             </div>
             <div
-              className="inline-flex items-center gap-1 mono text-[9px] tracking-widest uppercase text-muted-foreground"
-              title="Live values appear once the Ninebot auth handshake and decoder are wired in."
+              className={cn(
+                "inline-flex items-center gap-1 mono text-[9px] tracking-widest uppercase",
+                badge.cls,
+              )}
+              title={detail ?? undefined}
             >
-              <Info className="w-3 h-3" aria-hidden />
-              Pending decode
+              <badge.icon className={cn("w-3 h-3", badge.spin && "animate-spin")} aria-hidden />
+              {badge.label}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {tiles.map((t) => {
+            {TILES.map((t) => {
               const Icon = t.icon;
+              const value = formatTelemetryField(telemetry, t.field);
+              const isLive = status === "polling" && value !== "—";
               return (
                 <div
                   key={t.label}
                   className={cn(
                     "rounded-md border border-border bg-secondary/40 px-2.5 py-2",
-                    "flex items-start gap-2",
+                    "flex items-start gap-2 transition-colors",
+                    isLive && "border-primary-glow/40 bg-primary-glow/5",
                   )}
                   title={t.hint}
                 >
@@ -109,14 +230,23 @@ export default function NinebotScreen() {
                       {t.label}
                     </div>
                     <div className="mono text-sm">
-                      {t.value}
-                      {t.unit && <span className="text-[10px] text-muted-foreground ml-1">{t.unit}</span>}
+                      {value}
+                      {t.unit && value !== "—" && (
+                        <span className="text-[10px] text-muted-foreground ml-1">{t.unit}</span>
+                      )}
                     </div>
                   </div>
                 </div>
               );
             })}
           </div>
+          {/* Surface auth-failure detail inline so the user doesn't have to
+              dig through the connection log to learn why tiles are blank. */}
+          {status === "error" && detail && (
+            <div className="mono text-[10px] text-destructive/80 pt-1 border-t border-destructive/20">
+              {detail}
+            </div>
+          )}
         </section>
 
         {/* The actual scan/connect/retry surface — composed verbatim so
