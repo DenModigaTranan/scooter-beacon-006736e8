@@ -90,6 +90,23 @@ interface LogEntry {
 /** Cap log size — old entries get evicted FIFO so memory stays bounded. */
 const LOG_MAX_ENTRIES = 100;
 
+/**
+ * Visual metadata for each log kind. Lifted to module scope so the
+ * connection-log panel and the failure-details drawer render identical
+ * colors/labels for the same event types without duplicating the table.
+ */
+const LOG_KIND_META: Record<LogKind, { label: string; cls: string; dot: string }> = {
+  "attempt-start": { label: "TRY",      cls: "text-primary-glow",      dot: "bg-primary-glow" },
+  "attempt-ok":    { label: "OK",       cls: "text-primary-glow",      dot: "bg-primary-glow" },
+  "timeout":       { label: "TIMEOUT",  cls: "text-warning",           dot: "bg-warning" },
+  "attempt-fail":  { label: "FAIL",     cls: "text-destructive",       dot: "bg-destructive" },
+  "backoff":       { label: "BACKOFF",  cls: "text-warning/80",        dot: "bg-warning/80" },
+  "cancel":        { label: "CANCEL",   cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+  "disconnect":    { label: "DISC",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+  "info":          { label: "INFO",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+  "summary":       { label: "SUMMARY",  cls: "text-foreground",        dot: "bg-foreground/70" },
+};
+
 function rssiBars(rssi: number): number {
   if (rssi >= -55) return 4;
   if (rssi >= -65) return 3;
