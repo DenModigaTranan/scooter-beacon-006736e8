@@ -83,6 +83,51 @@ export function FlashScreen() {
   useEffect(() => { phoneBatteryRef.current = phoneBattery; }, [phoneBattery]);
   useEffect(() => { connStateRef.current = connState; }, [connState]);
 
+  // Tick a clock while the live progress view is on screen so elapsed/ETA
+  // re-render even when no flash event has fired in the last second.
+  useEffect(() => {
+    if (step !== 4) return;
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [step]);
+
+  // Derived live readouts: elapsed, throughput (chunks/sec window), ETA.
+  const liveStats = useMemo(() => {
+    const startedAt = startedAtRef.current ?? now;
+    const elapsedMs = Math.max(0, now - startedAt);
+    const writeStartedAt = writeStartedAtRef.current;
+    let rate = 0; // bytes/sec, computed only over the writing window
+    let etaMs = 0;
+    if (writeStartedAt && bytesWritten > 0) {
+      const writeElapsed = Math.max(1, now - writeStartedAt);
+      rate = (bytesWritten / writeElapsed) * 1000;
+      const remaining = Math.max(0, totalBytes - bytesWritten);
+      etaMs = rate > 0 ? (remaining / rate) * 1000 : 0;
+    }
+    return { elapsedMs, rate, etaMs };
+  }, [now, bytesWritten, totalBytes]);
+
+  // Build the phase list shown on screen 4 / 5.
+  const phases: Phase[] = useMemo(() => {
+    const downloadDetail = customFile
+      ? `${customFile.name} · ${formatBytes(customFile.bytes.length)}`
+      : selected?.url
+        ? `${selected.version} · ${formatBytes(downloadedBytes || selected.size)}`
+        : selected
+          ? `${selected.version} (catalog)`
+          : "—";
+    const writeDetail = totalBytes > 0
+      ? `${formatBytes(bytesWritten)} / ${formatBytes(totalBytes)} · ${formatRate(liveStats.rate)}`
+      : "—";
+    return [
+      { id: "download", label: "Fetch firmware", state: phaseStates.download, detail: downloadDetail },
+      { id: "arm",      label: `Arm ${target} update mode`, state: phaseStates.arm },
+      { id: "write",    label: "Write firmware chunks", state: phaseStates.write, detail: writeDetail },
+      { id: "verify",   label: "Finalize & verify", state: phaseStates.verify },
+      { id: "done",     label: "Complete", state: phaseStates.done },
+    ];
+  }, [phaseStates, target, customFile, selected, downloadedBytes, totalBytes, bytesWritten, liveStats.rate]);
+
   const catalogQ = useQuery({ queryKey: ["fw-catalog"], queryFn: ({ signal }) => fetchCatalog(signal) });
 
   const filtered = useMemo(
