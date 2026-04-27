@@ -586,6 +586,7 @@ export function GenericBleScreen() {
         error={connError}
         phase={connectPhase}
         now={now}
+        attemptOutcomes={attemptOutcomes}
         onDisconnect={disconnect}
         onCancel={cancelConnect}
         onRetry={() => connectedDevice && connect(connectedDevice)}
