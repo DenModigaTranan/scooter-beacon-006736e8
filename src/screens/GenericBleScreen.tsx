@@ -250,6 +250,11 @@ export function GenericBleScreen() {
     let attemptsSucceeded = 0;   // exactly 0 or 1 in current design
     let attemptsFailed = 0;      // timeouts + plugin errors + early disconnects
     let attemptsTimedOut = 0;    // subset of attemptsFailed
+    // Wall-clock duration of every attempt that actually started (ok or not).
+    // Used to surface min/max attempt time in the closing summary so bug
+    // reports show how the configured PER_ATTEMPT_TIMEOUT_MS cap compares to
+    // what actually happened in the field.
+    const attemptDurationsMs: number[] = [];
 
     /**
      * Emit the closing summary entry. Called from every terminal branch
@@ -264,12 +269,23 @@ export function GenericBleScreen() {
         outcome === "success"   ? "Connected"
         : outcome === "cancelled" ? "Cancelled"
         : "Failed";
+      const cap = formatMs(PER_ATTEMPT_TIMEOUT_MS);
       const counts =
         `${attemptsSucceeded} ok · ${attemptsFailed} failed` +
         (attemptsTimedOut ? ` (${attemptsTimedOut} timeout${attemptsTimedOut === 1 ? "" : "s"})` : "");
+      // Only show min/max once we have ≥1 finished attempt. With a single
+      // attempt, "min == max" is noise so collapse to a single value.
+      let timing = ` · cap ${cap}/attempt`;
+      if (attemptDurationsMs.length === 1) {
+        timing += ` · attempt ${formatMs(attemptDurationsMs[0])}`;
+      } else if (attemptDurationsMs.length > 1) {
+        const min = Math.min(...attemptDurationsMs);
+        const max = Math.max(...attemptDurationsMs);
+        timing += ` · attempts ${formatMs(min)}–${formatMs(max)}`;
+      }
       pushLog(
         "summary",
-        `${verb} after ${total} · ${attemptsTried}/${MAX_ATTEMPTS} attempt${attemptsTried === 1 ? "" : "s"} · ${counts}`,
+        `${verb} after ${total} · ${attemptsTried}/${MAX_ATTEMPTS} attempt${attemptsTried === 1 ? "" : "s"} · ${counts}${timing}`,
       );
     };
 
@@ -293,6 +309,7 @@ export function GenericBleScreen() {
           finish(() => reject(new Error(`timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`)));
           attemptsFailed++;
           attemptsTimedOut++;
+          attemptDurationsMs.push(elapsed());
           pushLog(
             "timeout",
             `Attempt ${attempt} hit timeout (${formatMs(elapsed())} / cap ${cap})`,
@@ -328,14 +345,21 @@ export function GenericBleScreen() {
             setConnectedDevice(null);
             setServices([]);
           } else {
-            finish(() => reject(new Error(`disconnected before GATT ready (after ${formatMs(elapsed())})`)));
+            const took = elapsed();
+            attemptDurationsMs.push(took);
+            finish(() => reject(new Error(`disconnected before GATT ready (after ${formatMs(took)})`)));
           }
         }).then(
           () => {
             const took = elapsed();
             clearTimeout(timeoutId);
             ac.signal.removeEventListener("abort", onAbort);
+            // If we already settled (timeout / abort), the attempt has already
+            // been counted and its duration recorded — don't double-count even
+            // though the underlying plugin call eventually resolved.
+            if (settled) return;
             attemptsSucceeded++;
+            attemptDurationsMs.push(took);
             finish(() => resolve());
             pushLog(
               "attempt-ok",
@@ -350,6 +374,9 @@ export function GenericBleScreen() {
             // Annotate the rejection with timing so the outer loop can render
             // a uniform "took Xs" tail in the FAIL log entry.
             (e as Error & { tookMs?: number }).tookMs = took;
+            // Same guard as the success branch: timeout/abort paths already
+            // recorded the duration before forcing the reject.
+            if (!settled) attemptDurationsMs.push(took);
             finish(() => reject(e));
           },
         );
