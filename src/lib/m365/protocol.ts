@@ -45,8 +45,11 @@ export const M365 = {
   /** Known register offsets for read commands (subset, ESC unless noted). */
   REG: {
     SERIAL: 0x10,           // 14 bytes ASCII
-    HARDWARE_VERSION: 0x19, // u16 -> v X.Y.Z (ESC)
+    MODEL_ID: 0x16,         // 2 bytes — board model id (ESC)
+    COC_VERSION: 0x17,      // 2 bytes — homologation / region code (ESC)
+    HARDWARE_VERSION: 0x19, // u16 -> v X.Y.Z (ESC / BLE / BMS, target-dependent)
     FIRMWARE_VERSION: 0x1a, // u16 -> v X.Y.Z
+    ERROR_CODE: 0x1b,       // u16 — last fault code (ESC)
     BATTERY_PCT: 0x22,
     REMAINING_CAPACITY: 0x32,
     BATTERY_VOLTAGE: 0x34,
@@ -57,6 +60,8 @@ export const M365 = {
     MILEAGE_TRIP: 0x2b,
     RIDING_MODE: 0x75,
     BMS_DATE: 0xb2,         // u16 packed Y/M/D (BMS)
+    BMS_CYCLES: 0x1b,       // u16 — charge cycle count (BMS)
+    BMS_HEALTH_PCT: 0x2e,   // u8  — state of health 0..100 (BMS)
   },
 } as const;
 
