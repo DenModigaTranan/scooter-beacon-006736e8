@@ -946,7 +946,7 @@ export function GenericBleScreen() {
  * the total duration of that run. Auto-hides on success.
  */
 function FailureSummaryChip({
-  data, now, canRetry, onRetry, retryInSec, onCancelRetry,
+  data, now, canRetry, onRetry, retryInSec, onCancelRetry, retryContext,
 }: {
   data: {
     entry: LogEntry;
