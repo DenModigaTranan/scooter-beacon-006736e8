@@ -680,6 +680,49 @@ export function GenericBleScreen() {
   }, [devices, filter]);
 
   /**
+   * The model whose capability list governs which raw GATT controls are
+   * exposed for the *connected* device. Resolution order:
+   *   1. The user's pinned `Target model`, if set — explicit always wins.
+   *   2. Otherwise the registry's auto-detection from the connected
+   *      device's advertisement (name / service UUIDs / mfr IDs).
+   *   3. `null` when nothing is connected — gating is a no-op until
+   *      there's a peripheral to gate against.
+   *
+   * We deliberately key the memo on the connected device's identity, not
+   * the full object, so transient field updates (e.g. an RSSI tick) don't
+   * cause the gating to recompute.
+   */
+  const activeModel = useMemo(() => {
+    if (!connectedDevice) return null;
+    if (targetModel) return targetModel;
+    const detection = detectNinebot({
+      name: connectedDevice.name,
+      serviceUuids: connectedDevice.serviceUuids,
+      manufacturerIds: connectedDevice.manufacturerIds,
+    });
+    if (!detection) return null;
+    const m = matchNinebotModel({
+      name: connectedDevice.name,
+      serviceUuids: connectedDevice.serviceUuids,
+      manufacturerIds: connectedDevice.manufacturerIds,
+    });
+    // Only return a concrete match — the fallback model has a deliberately
+    // conservative capability set, but we'd rather expose every raw GATT
+    // control than silently restrict the user when the registry didn't
+    // actually recognise the device.
+    return m.via === "fallback" ? null : m.model;
+  }, [connectedDevice, targetModel]);
+
+  // Capability flags for the active model. A `null` model means "no
+  // gating in effect" — we surface that to the row as `null`/`null` so it
+  // can render its full property-driven controls unchanged. Booleans mean
+  // "the model has at least one capability of this class".
+  const allowsRead = activeModel ? activeModel.capabilities.some((c) => c.startsWith("read.")) : null;
+  const allowsWrite = activeModel
+    ? activeModel.capabilities.some((c) => c.startsWith("write.") || c.startsWith("secure."))
+    : null;
+
+  /**
    * Most recent failure recap, derived purely from the log so it stays in
    * sync with whatever's already been pushed.
    *
@@ -805,6 +848,20 @@ export function GenericBleScreen() {
                 <span className="mono text-[10px] text-muted-foreground">{services.length} found</span>
               )}
             </div>
+            {/* Capability gating banner — explains why some buttons are
+                disabled before the user wonders. Only shown when a model
+                is actively governing the rows AND it blocks at least
+                one class; silent otherwise. */}
+            {activeModel && (allowsRead === false || allowsWrite === false) && (
+              <div className="mb-2 rounded-sm border border-warning/30 bg-warning/5 px-2 py-1.5 mono text-[10px] text-warning leading-relaxed">
+                <span className="tracking-widest uppercase mr-1">Gated by {activeModel.shortLabel}:</span>
+                {allowsRead === false && allowsWrite === false
+                  ? "no read or write commands supported."
+                  : allowsRead === false
+                    ? "read commands disabled."
+                    : "write commands disabled."}
+              </div>
+            )}
             {!discovering && services.length === 0 && (
               <div className="text-xs text-muted-foreground py-2">
                 No services exposed (or discovery not supported on this platform).
@@ -822,6 +879,9 @@ export function GenericBleScreen() {
                             deviceId={connectedDevice?.deviceId ?? ""}
                             serviceUuid={s.uuid}
                             char={c}
+                            modelAllowsRead={allowsRead}
+                            modelAllowsWrite={allowsWrite}
+                            modelLabel={activeModel?.shortLabel ?? null}
                           />
                         </li>
                       ))}
@@ -2097,15 +2157,39 @@ function DeviceRow({
  */
 function CharacteristicRow({
   deviceId, serviceUuid, char,
+  modelAllowsRead, modelAllowsWrite, modelLabel,
 }: {
   deviceId: string;
   serviceUuid: string;
   char: GenericCharInfo;
+  // Capability gating from the active Ninebot/Segway model. `null` means
+  // "no model is governing this row" (either nothing's connected, or the
+  // device wasn't recognised as a known scooter) — in which case the row
+  // falls back to the GATT-property-only behaviour. `false` means the
+  // model exists but explicitly doesn't expose any read/write commands;
+  // the corresponding control is disabled with an explanatory tooltip.
+  modelAllowsRead: boolean | null;
+  modelAllowsWrite: boolean | null;
+  // Short label of the active model, used in tooltips so the user can
+  // see *why* a button is disabled at a glance.
+  modelLabel: string | null;
 }) {
-  const canRead = char.properties.includes("read");
-  const canWrite = char.properties.includes("write") || char.properties.includes("writewithoutresponse");
+  // GATT-level capability: what the peripheral itself supports per its
+  // declared characteristic properties.
+  const gattCanRead = char.properties.includes("read");
+  const gattCanWrite = char.properties.includes("write") || char.properties.includes("writewithoutresponse");
   const writeAcked = char.properties.includes("write");
   const canNotify = char.properties.includes("notify") || char.properties.includes("indicate");
+
+  // Effective capability: GATT property AND model capability (when a
+  // model is in effect). We hide a button entirely when GATT doesn't
+  // support it; we *disable* it (rather than hiding) when only the model
+  // is the blocker so the user can see what the device exposes vs what
+  // the model gates off — disappearing controls would be more confusing.
+  const modelBlocksRead = modelAllowsRead === false;
+  const modelBlocksWrite = modelAllowsWrite === false;
+  const canRead = gattCanRead;
+  const canWrite = gattCanWrite;
 
   const hint = getMockHint(deviceId, serviceUuid, char.uuid) ?? "hex";
 
@@ -2123,6 +2207,13 @@ function CharacteristicRow({
   useEffect(() => () => { unsubRef.current?.().catch(() => {}); }, []);
 
   const onRead = async () => {
+    // Defensive: the button is disabled when the model blocks reads, but
+    // a stale render or keyboard activation could still fire — bail
+    // before touching the transport.
+    if (modelBlocksRead) {
+      setError(`Read blocked by ${modelLabel ?? "active model"}.`);
+      return;
+    }
     setBusy("read");
     setError(null);
     try {
@@ -2137,6 +2228,10 @@ function CharacteristicRow({
   };
 
   const onWrite = async () => {
+    if (modelBlocksWrite) {
+      setError(`Write blocked by ${modelLabel ?? "active model"}.`);
+      return;
+    }
     const bytes = parseWritePayload(writeText, hint);
     if (!bytes) {
       setError(`Invalid ${hint} payload`);
@@ -2202,8 +2297,16 @@ function CharacteristicRow({
         {canRead && (
           <button
             onClick={onRead}
-            disabled={busy !== null}
-            className="chip text-[9px] tracking-widest text-primary-glow hover:bg-primary/15 inline-flex items-center gap-1 disabled:opacity-50"
+            disabled={busy !== null || modelBlocksRead}
+            title={
+              modelBlocksRead
+                ? `Read commands are not supported by ${modelLabel ?? "the active model"}.`
+                : undefined
+            }
+            className={cn(
+              "chip text-[9px] tracking-widest text-primary-glow hover:bg-primary/15 inline-flex items-center gap-1 disabled:opacity-50",
+              modelBlocksRead && "cursor-not-allowed",
+            )}
           >
             {busy === "read"
               ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
@@ -2214,8 +2317,16 @@ function CharacteristicRow({
         {canWrite && (
           <button
             onClick={() => { setWriteOpen((o) => !o); setError(null); }}
-            disabled={busy !== null}
-            className="chip text-[9px] tracking-widest text-primary-glow hover:bg-primary/15 inline-flex items-center gap-1 disabled:opacity-50"
+            disabled={busy !== null || modelBlocksWrite}
+            title={
+              modelBlocksWrite
+                ? `Write commands are not supported by ${modelLabel ?? "the active model"}.`
+                : undefined
+            }
+            className={cn(
+              "chip text-[9px] tracking-widest text-primary-glow hover:bg-primary/15 inline-flex items-center gap-1 disabled:opacity-50",
+              modelBlocksWrite && "cursor-not-allowed",
+            )}
           >
             <Upload className="w-2.5 h-2.5" />
             WRITE{writeAcked ? "" : "-NR"}
