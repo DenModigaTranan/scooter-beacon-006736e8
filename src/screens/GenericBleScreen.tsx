@@ -316,10 +316,15 @@ export function GenericBleScreen() {
         try {
           await attemptOnce(attempt);
           lastError = null;
+          pushLog("attempt-ok", `Attempt ${attempt} succeeded — link up`);
           break;
         } catch (e) {
           lastError = e instanceof Error ? e : new Error(String(e));
           if (lastError.message === "cancelled") throw lastError;
+          // Avoid double-logging the timeout (already logged inside attemptOnce).
+          if (!lastError.message.startsWith("timed out")) {
+            pushLog("attempt-fail", `Attempt ${attempt} failed: ${lastError.message}`);
+          }
           if (attempt >= MAX_ATTEMPTS) throw lastError;
           const delay = BACKOFFS_MS[Math.min(attempt - 1, BACKOFFS_MS.length - 1)];
           const resumeAt = Date.now() + delay;
@@ -329,6 +334,7 @@ export function GenericBleScreen() {
             resumeAt,
             lastError: lastError.message,
           });
+          pushLog("backoff", `Backoff ${delay}ms before attempt ${attempt + 1}`);
           await sleepOrAbort(delay, resumeAt);
           if (aborted()) throw new Error("cancelled");
         }
