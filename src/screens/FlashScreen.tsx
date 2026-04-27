@@ -530,7 +530,15 @@ export function FlashScreen() {
               <Check2
                 ok={checks.handshakeOk}
                 label="M365 protocol handshake"
-                value={handshake ? (handshake.ok ? "validated" : handshake.reason) : "pending"}
+                value={
+                  handshake
+                    ? handshake.ok
+                      ? handshake.cloneMode
+                        ? `clone-tolerant (${handshake.variantId})`
+                        : "validated (strict)"
+                      : handshake.reason
+                    : "pending"
+                }
               />
               <Check2
                 ok={checks.battery}
