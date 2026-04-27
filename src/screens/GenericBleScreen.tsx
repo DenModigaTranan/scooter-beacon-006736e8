@@ -31,6 +31,7 @@ import {
   genericBle, formatBytes, getMockHint, charKey,
   type GenericDevice, type GenericServiceInfo, type GenericCharInfo,
 } from "@/lib/generic-ble";
+import { detectNinebot } from "@/lib/ninebot-detect";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
 type ConnState = "disconnected" | "connecting" | "connected" | "error";
