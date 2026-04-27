@@ -60,6 +60,44 @@ export function InfoScreen() {
   const [lastResult, setLastResult] = useState<VerifyResult | null>(null);
   const MAX_ATTEMPTS = 3;
 
+  const [loadingExtras, setLoadingExtras] = useState(false);
+  const [extrasError, setExtrasError] = useState<string | null>(null);
+
+  // Auto-load extras the first time the screen mounts so the panel isn't
+  // empty. Subsequent loads are user-triggered via the refresh button.
+  useEffect(() => {
+    if (extendedInfo) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingExtras(true);
+      setExtrasError(null);
+      try {
+        await refreshExtendedInfo();
+      } catch (e) {
+        if (!cancelled) setExtrasError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoadingExtras(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onRefreshExtras = async () => {
+    setLoadingExtras(true);
+    setExtrasError(null);
+    try {
+      await refreshExtendedInfo();
+      toast.success("Identifiers refreshed");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setExtrasError(msg);
+      toast.error("Refresh failed");
+    } finally {
+      setLoadingExtras(false);
+    }
+  };
+
   // Reset step machine when dialog closes
   useEffect(() => {
     if (!confirmOpen) {
