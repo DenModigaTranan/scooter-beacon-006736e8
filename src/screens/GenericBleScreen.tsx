@@ -384,8 +384,12 @@ export function GenericBleScreen() {
         } catch (e) {
           lastError = e instanceof Error ? e : new Error(String(e));
           if (lastError.message === "cancelled") throw lastError;
-          // Avoid double-logging the timeout (already logged inside attemptOnce).
+          // Avoid double-counting / double-logging timeouts: the timeout
+          // path already incremented counters and logged from inside
+          // attemptOnce. Anything else (plugin error, early disconnect) is
+          // counted here as a generic failure.
           if (!lastError.message.startsWith("timed out")) {
+            attemptsFailed++;
             const tookMs = (lastError as Error & { tookMs?: number }).tookMs;
             const tail = tookMs !== undefined ? ` (took ${formatMs(tookMs)})` : "";
             pushLog("attempt-fail", `Attempt ${attempt} failed${tail}: ${lastError.message}`);
@@ -415,6 +419,9 @@ export function GenericBleScreen() {
       } finally {
         setDiscovering(false);
       }
+      // Final recap for the success branch — emitted after discovery so the
+      // total time covers the full "user clicks → ready to use" experience.
+      emitSummary("success");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setConnectPhase({ kind: "idle" });
