@@ -629,6 +629,26 @@ function ConnectionLogPanel({
   const latest = entries[0];
 
   /**
+   * Auto-expand the panel whenever a new noteworthy event arrives (a failed
+   * attempt, a hit timeout, or a user/peer cancellation). We track the id of
+   * the last entry that triggered an auto-open so we only fire once per such
+   * event — the user can still close the panel manually and we won't keep
+   * popping it back open until another fresh failure shows up.
+   */
+  const NOTEWORTHY: ReadonlySet<LogKind> = useMemo(
+    () => new Set<LogKind>(["attempt-fail", "timeout", "cancel"]),
+    [],
+  );
+  const lastAutoOpenIdRef = useRef<number>(0);
+  useEffect(() => {
+    if (!latest) return;
+    if (latest.id === lastAutoOpenIdRef.current) return;
+    if (!NOTEWORTHY.has(latest.kind)) return;
+    lastAutoOpenIdRef.current = latest.id;
+    setOpen(true);
+  }, [latest, NOTEWORTHY]);
+
+  /**
    * Build a plain-text dump suitable for pasting into a bug report. Lines
    * are oldest → newest (chronological reading order), each prefixed with an
    * ISO-ish timestamp + the event kind in brackets so it's grep-friendly.
