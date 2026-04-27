@@ -311,6 +311,8 @@ function buildNinebotMockServices(): MockService[] {
           ctx.pushNotify(NB_TX, buildFrame(r.dst, APP, CMD_REPLY, r.arg, Uint8Array.from([valueByte])));
         }
       }
+    }
+  };
 
   return [
     {
