@@ -83,6 +83,7 @@ export function useScooter() {
     store.setInfo(null);
     store.setTelemetry(null);
     store.setHandshake(null);
+    store.setExtendedInfo(null);
   }, [store]);
 
   const writeSerialAndVerify = useCallback(async (s: string, maxAttempts = 1) => {
