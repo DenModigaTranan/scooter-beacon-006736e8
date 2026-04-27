@@ -317,8 +317,9 @@ export function GenericBleScreen() {
       </div>
 
       <p className="text-[10px] text-muted-foreground/70 text-center pt-1 leading-relaxed">
-        Generic mode performs read-only GATT discovery. No protocol writes are
-        sent to the connected peripheral.
+        Generic mode exposes raw GATT — read, write, and subscribe per
+        characteristic. Mock peripherals (preview only) simulate live
+        notifications so the UI is fully testable without hardware.
       </p>
     </div>
   );
