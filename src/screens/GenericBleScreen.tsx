@@ -990,6 +990,24 @@ function FailureSummaryChip({
           <div className="mono text-[11px] text-foreground/90 leading-snug break-words">
             {reason}
           </div>
+          {/* Plain-language "what to try next" hint, picked from the failure
+              category + whether the orchestrator is still retrying. Lives on
+              the same card so the user reads reason → fix in one glance. */}
+          {(() => {
+            const next = nextStepFor(cls.category, ended);
+            const NextIcon = next.icon;
+            return (
+              <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-muted-foreground leading-snug">
+                <NextIcon className={cn("w-3 h-3 mt-0.5 shrink-0", tone.icon)} aria-hidden />
+                <span>
+                  <span className={cn("mono text-[9px] tracking-widest uppercase mr-1", tone.header)}>
+                    Next
+                  </span>
+                  {next.text}
+                </span>
+              </div>
+            );
+          })()}
         </div>
         {expandable && (
           <ChevronDown
