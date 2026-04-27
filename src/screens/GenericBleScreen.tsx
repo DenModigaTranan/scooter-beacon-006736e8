@@ -753,14 +753,23 @@ function DeviceRow({
           <Button
             onClick={onConnect}
             disabled={disabled || isConnecting}
+            aria-busy={isConnecting}
+            title={
+              disabled && !isConnecting
+                ? "Another connect attempt is in progress"
+                : undefined
+            }
             size="sm"
             className={cn(
               "mono text-[10px] tracking-widest",
               "bg-gradient-mint text-primary-foreground shadow-mint hover:opacity-90",
+              disabled && !isConnecting && "opacity-50 cursor-not-allowed",
             )}
           >
             {isConnecting ? (
               <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> CONNECTING</>
+            ) : disabled ? (
+              <><Plug className="w-3 h-3 mr-1" /> BUSY</>
             ) : (
               <><Plug className="w-3 h-3 mr-1" /> CONNECT <ChevronRight className="w-3 h-3 ml-0.5" /></>
             )}
