@@ -234,17 +234,29 @@ export function FlashScreen() {
     clearLog();
     setProgress(0);
     setBytesWritten(0);
+    setDownloadedBytes(0);
     setSafeToAbort(true);
     setFlashStatus("preparing");
     setFlashResult(null);
     setFlashError("");
+    setPhaseStates({
+      download: "active", arm: "pending", write: "pending", verify: "pending", done: "pending",
+    });
+
+    const startedAt = Date.now();
+    startedAtRef.current = startedAt;
+    writeStartedAtRef.current = null;
+    finishedAtRef.current = null;
+    setNow(startedAt);
 
     const ac = new AbortController();
     abortRef.current = ac;
 
     let firmwareBytes: Uint8Array;
     if (customFile) {
+      appendLog(`> using local file: ${customFile.name} (${formatBytes(customFile.bytes.length)})`);
       firmwareBytes = customFile.bytes;
+      setDownloadedBytes(customFile.bytes.length);
     } else if (selected) {
       try {
         if (selected.url) {
@@ -252,17 +264,23 @@ export function FlashScreen() {
           const r = await fetch(selected.url, { signal: ac.signal });
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           firmwareBytes = new Uint8Array(await r.arrayBuffer());
+          setDownloadedBytes(firmwareBytes.length);
+          appendLog(`> downloaded ${formatBytes(firmwareBytes.length)}`);
         } else {
           appendLog(`! no URL — using simulated buffer (${selected.size}B)`);
           firmwareBytes = new Uint8Array(selected.size);
+          setDownloadedBytes(firmwareBytes.length);
         }
       } catch (e) {
+        finishedAtRef.current = Date.now();
         if (ac.signal.aborted) {
           appendLog(`! aborted before flash`);
+          setPhaseStates((s) => ({ ...s, download: "fail" }));
           setFlashResult("aborted-safe");
           setFlashError("Aborted before any data was written.");
         } else {
           appendLog(`! download failed: ${e}`);
+          setPhaseStates((s) => ({ ...s, download: "fail" }));
           toast.error("Download failed");
           setFlashResult("error");
           setFlashError(String(e));
@@ -277,6 +295,7 @@ export function FlashScreen() {
     }
 
     setTotalBytes(firmwareBytes.length);
+    setPhaseStates((s) => ({ ...s, download: "ok", arm: "active" }));
 
     try {
       for await (const p of scooter.flash(target, firmwareBytes, {
@@ -288,19 +307,48 @@ export function FlashScreen() {
         setBytesWritten(p.bytes);
         setFlashStatus(p.status);
         setSafeToAbort(p.safeToAbort);
+
+        // Map service-level status → phase checklist.
+        if (p.status === "arming") {
+          setPhaseStates((s) => ({ ...s, arm: "active" }));
+        } else if (p.status === "writing") {
+          if (writeStartedAtRef.current === null) writeStartedAtRef.current = Date.now();
+          setPhaseStates((s) => ({ ...s, arm: "ok", write: "active" }));
+        } else if (p.status === "done") {
+          // service emits one final "done" yield AFTER FINALIZE — treat as
+          // verify+done in one go (the FINALIZE write happened just before).
+          setPhaseStates((s) => ({ ...s, write: "ok", verify: "ok", done: "ok" }));
+        }
       }
+      finishedAtRef.current = Date.now();
       setFlashResult("success");
       setStep(5);
       toast.success(`${target} flashed`);
     } catch (e) {
+      finishedAtRef.current = Date.now();
       if (e instanceof FlashAbortError) {
         appendLog(`! ABORT (${e.phase}): ${e.message}`);
+        // Mark whichever phase was active as failed; leave earlier phases ok.
+        setPhaseStates((s) => {
+          const next = { ...s };
+          (Object.keys(next) as PhaseId[]).forEach((id) => {
+            if (next[id] === "active") next[id] = "fail";
+          });
+          return next;
+        });
         setFlashResult(e.phase === "safe" ? "aborted-safe" : "aborted-unsafe");
         setFlashError(e.message);
         if (e.phase === "safe") toast(`Flash aborted safely`);
         else toast.error(`Flash aborted mid-write — REFLASH IMMEDIATELY`);
       } else {
         appendLog(`! ERROR ${e}`);
+        setPhaseStates((s) => {
+          const next = { ...s };
+          (Object.keys(next) as PhaseId[]).forEach((id) => {
+            if (next[id] === "active") next[id] = "fail";
+          });
+          return next;
+        });
         setFlashResult("error");
         setFlashError(String(e));
         toast.error("Flash failed");
