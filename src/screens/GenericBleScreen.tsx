@@ -2193,6 +2193,13 @@ function CharacteristicRow({
   useEffect(() => () => { unsubRef.current?.().catch(() => {}); }, []);
 
   const onRead = async () => {
+    // Defensive: the button is disabled when the model blocks reads, but
+    // a stale render or keyboard activation could still fire — bail
+    // before touching the transport.
+    if (modelBlocksRead) {
+      setError(`Read blocked by ${modelLabel ?? "active model"}.`);
+      return;
+    }
     setBusy("read");
     setError(null);
     try {
@@ -2207,6 +2214,10 @@ function CharacteristicRow({
   };
 
   const onWrite = async () => {
+    if (modelBlocksWrite) {
+      setError(`Write blocked by ${modelLabel ?? "active model"}.`);
+      return;
+    }
     const bytes = parseWritePayload(writeText, hint);
     if (!bytes) {
       setError(`Invalid ${hint} payload`);
