@@ -20,6 +20,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Bluetooth, Loader2, RefreshCw, Search, Signal, X, Zap, Check,
   AlertTriangle, WifiOff, Plug, PlugZap, ChevronRight, Download, Upload, Bell, BellOff,
+  ChevronDown, ScrollText, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
