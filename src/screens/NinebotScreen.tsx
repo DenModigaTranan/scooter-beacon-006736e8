@@ -25,6 +25,7 @@
 import { useMemo } from "react";
 import { Battery, Gauge, Lock, Route as RouteIcon, Zap, Info } from "lucide-react";
 import { GenericBleScreen } from "@/screens/GenericBleScreen";
+import { NinebotSupportedModels } from "@/components/NinebotSupportedModels";
 import { cn } from "@/lib/utils";
 
 interface TelemetryTile {
@@ -121,6 +122,11 @@ export default function NinebotScreen() {
         {/* The actual scan/connect/retry surface — composed verbatim so
             every improvement to the generic flow flows through here. */}
         <GenericBleScreen />
+
+        {/* Reference panel: every model the registry recognises and what
+            each one can do once connected. Read-only; the registry is
+            the single source of truth. */}
+        <NinebotSupportedModels />
       </main>
     </div>
   );
