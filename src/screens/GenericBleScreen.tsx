@@ -88,6 +88,14 @@ export function GenericBleScreen() {
    * so the user can bail at any time.
    */
   const connectAbortRef = useRef<AbortController | null>(null);
+  /**
+   * Synchronous re-entry guard. React state updates are batched/async, so two
+   * rapid clicks on the same (or different) CONNECT button can both pass the
+   * `connState === "connecting"` check before either render commits. This ref
+   * flips synchronously inside connect() so a second invocation in the same
+   * tick is rejected immediately.
+   */
+  const connectInFlightRef = useRef(false);
 
   // ---- scanning ----------------------------------------------------------
   const startScan = useCallback(async () => {
@@ -144,6 +152,7 @@ export function GenericBleScreen() {
   const cancelConnect = useCallback(async () => {
     connectAbortRef.current?.abort();
     connectAbortRef.current = null;
+    connectInFlightRef.current = false;
     setConnectPhase({ kind: "idle" });
     setConnState("disconnected");
     setConnectedDevice(null);
@@ -152,7 +161,12 @@ export function GenericBleScreen() {
   }, []);
 
   const connect = useCallback(async (d: GenericDevice) => {
+    // Synchronous guard — rejects re-entry within the same tick before any
+    // React state has had a chance to flush. Combined with the disabled
+    // button this makes overlapping connects impossible.
+    if (connectInFlightRef.current) return;
     if (connState === "connecting") return;
+    connectInFlightRef.current = true;
     // Tear down any previous connect sequence and any existing connection.
     connectAbortRef.current?.abort();
     if (connState === "connected") {
@@ -285,11 +299,13 @@ export function GenericBleScreen() {
       try { await genericBle.disconnect(); } catch { /* ignore */ }
     } finally {
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
+      connectInFlightRef.current = false;
     }
   }, [connState]);
 
   const disconnect = useCallback(async () => {
     connectAbortRef.current?.abort();
+    connectInFlightRef.current = false;
     await genericBle.disconnect();
     setConnState("disconnected");
     setConnectPhase({ kind: "idle" });
@@ -737,14 +753,23 @@ function DeviceRow({
           <Button
             onClick={onConnect}
             disabled={disabled || isConnecting}
+            aria-busy={isConnecting}
+            title={
+              disabled && !isConnecting
+                ? "Another connect attempt is in progress"
+                : undefined
+            }
             size="sm"
             className={cn(
               "mono text-[10px] tracking-widest",
               "bg-gradient-mint text-primary-foreground shadow-mint hover:opacity-90",
+              disabled && !isConnecting && "opacity-50 cursor-not-allowed",
             )}
           >
             {isConnecting ? (
               <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> CONNECTING</>
+            ) : disabled ? (
+              <><Plug className="w-3 h-3 mr-1" /> BUSY</>
             ) : (
               <><Plug className="w-3 h-3 mr-1" /> CONNECT <ChevronRight className="w-3 h-3 ml-0.5" /></>
             )}
