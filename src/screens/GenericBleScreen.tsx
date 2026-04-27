@@ -1936,6 +1936,16 @@ function DeviceRow({
     ninebot?.confidence === "high" ? "text-primary-glow border-primary-glow/40"
     : ninebot?.confidence === "medium" ? "text-primary border-primary/40"
     : "text-muted-foreground border-border";
+
+  // Target-model gating. When the user has pinned a specific model in the
+  // toolbar, mark devices whose detected model doesn't match so Connect is
+  // disabled for them. We treat the fallback ("ninebot-unknown") as
+  // *non-matching* on purpose — pinning a model is an explicit assertion
+  // and we shouldn't connect when we can't even confidently identify the
+  // device family.
+  const isTargetPinned = targetModelId !== "auto";
+  const detectedModelId = ninebotModel?.via !== "fallback" ? ninebotModel?.model.id : null;
+  const targetMismatch = isTargetPinned && detectedModelId !== targetModelId;
   return (
     <motion.div
       initial={{ opacity: 0, x: -6 }}
