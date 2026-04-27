@@ -446,27 +446,67 @@ export class ScooterService {
     return this.mockTelemetry;
   }
 
-  /** Flash a firmware .bin to a target. Yields progress 0..1. */
+  /**
+   * Flash a firmware .bin to a target. Yields progress 0..1.
+   *
+   * Safety contract:
+   *  - `signal` (AbortSignal): aborting BEFORE the first chunk is written
+   *    raises a `FlashAbortError` with `phase="safe"` — the device is
+   *    untouched. Aborting AFTER the first chunk raises `phase="unsafe"`
+   *    — the device may be partially flashed and must be reflashed.
+   *  - `preflightCheck`: invoked just before entering update mode and
+   *    before every yield. Returning a non-empty string aborts the flash
+   *    with that string as the failure reason (treated as an unsafe abort
+   *    if any chunk has been written).
+   */
   async *flash(
     target: "DRV" | "BMS" | "BLE",
     firmware: Uint8Array,
-    opts?: { onLog?: (line: string) => void }
-  ): AsyncGenerator<{ pct: number; bytes: number; total: number; status: string }> {
+    opts?: {
+      onLog?: (line: string) => void;
+      signal?: AbortSignal;
+      preflightCheck?: () => string | null;
+    }
+  ): AsyncGenerator<{ pct: number; bytes: number; total: number; status: string; safeToAbort: boolean }> {
     const log = opts?.onLog ?? (() => {});
+    const signal = opts?.signal;
+    const check = opts?.preflightCheck;
     // Hard-fail before touching firmware if the device hasn't passed the
     // GATT handshake — avoids bricking a non-M365 peripheral that happened
     // to advertise a similar name.
     this.requireHandshake();
+    if (!this.isConnected()) {
+      throw new FlashAbortError("not connected", "safe");
+    }
+
     const addr = target === "DRV" ? M365.ADDR.ESC : target === "BMS" ? M365.ADDR.BMS : M365.ADDR.BLE;
     const total = firmware.length;
+    let written = 0;
+
+    const guard = (): void => {
+      if (signal?.aborted) {
+        throw new FlashAbortError("aborted by user", written === 0 ? "safe" : "unsafe");
+      }
+      if (!this.isConnected()) {
+        throw new FlashAbortError("BLE connection lost", written === 0 ? "safe" : "unsafe");
+      }
+      const reason = check?.();
+      if (reason) {
+        throw new FlashAbortError(reason, written === 0 ? "safe" : "unsafe");
+      }
+    };
 
     log(`> begin ${target} flash, ${total} bytes`);
+    // Final safety gate before the device enters update mode.
+    guard();
+    yield { pct: 0, bytes: 0, total, status: "arming", safeToAbort: true };
+
     if (isNative()) await this.write(buildFrame(addr, M365.CMD.UPDATE, [FLASH.ENTER_UPDATE]));
     await sleep(400);
 
     const chunks = Math.ceil(total / FLASH.CHUNK_SIZE);
-    let written = 0;
     for (let i = 0; i < chunks; i++) {
+      guard();
       const start = i * FLASH.CHUNK_SIZE;
       const payload = firmware.slice(start, start + FLASH.CHUNK_SIZE);
       if (isNative()) await this.write(buildChunkFrame(addr, i, payload));
@@ -474,14 +514,14 @@ export class ScooterService {
       // throttle so even huge files yield reasonable refresh rates
       if (i % 4 === 0) await sleep(8);
       if (i % 64 === 0) log(`  chunk ${i}/${chunks}`);
-      yield { pct: written / total, bytes: written, total, status: "writing" };
+      yield { pct: written / total, bytes: written, total, status: "writing", safeToAbort: false };
     }
 
     log(`> verifying`);
     if (isNative()) await this.write(buildFrame(addr, M365.CMD.UPDATE, [FLASH.FINALIZE]));
     await sleep(500);
     log(`> ${target} flash complete`);
-    yield { pct: 1, bytes: total, total, status: "done" };
+    yield { pct: 1, bytes: total, total, status: "done", safeToAbort: false };
   }
 
   // ──────────────── mock loop for web preview ────────────────
