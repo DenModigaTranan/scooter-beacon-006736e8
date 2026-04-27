@@ -12,13 +12,15 @@
  * mutates session lifecycle, so the rest of this file can stay declarative.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Battery, Gauge, Lock, Route as RouteIcon, Zap, Info, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
 import { GenericBleScreen } from "@/screens/GenericBleScreen";
 import { NinebotSupportedModels } from "@/components/NinebotSupportedModels";
+import { NinebotControlsPanel } from "@/components/NinebotControlsPanel";
 import { genericBle } from "@/lib/generic-ble";
 import { NB_GATT, formatTelemetryField, type NinebotTelemetry } from "@/lib/ninebot/protocol";
-import { NinebotSession, type NinebotSessionStatus } from "@/lib/ninebot/session";
+import { NinebotSession, type NinebotCommand, type NinebotSessionStatus } from "@/lib/ninebot/session";
+import { matchNinebotModel, type NinebotModel } from "@/lib/ninebot-models";
 import { cn } from "@/lib/utils";
 
 interface TelemetryTile {
