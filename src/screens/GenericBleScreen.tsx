@@ -1052,6 +1052,43 @@ function FailureSummaryChip({
   );
 }
 
+/**
+ * Short, actionable hint shown directly under the failure reason. Kept to
+ * one line of plain English so it reads as guidance, not a full diagnostic.
+ * `ended` lets us swap "the orchestrator is still retrying for you" copy
+ * (in-progress) for "you'll need to do something" copy (run finished).
+ */
+function nextStepFor(
+  category: FailureCategory,
+  ended: boolean,
+): { icon: LucideIcon; text: string } {
+  switch (category) {
+    case "timeout":
+      return ended
+        ? { icon: Signal, text: "Move closer to the device and tap Retry — it never answered in time." }
+        : { icon: Clock,  text: "Waiting on the device to respond — auto-retrying with backoff." };
+    case "disconnect":
+      return ended
+        ? { icon: Unplug, text: "Link dropped during handshake. Power-cycle the device, then tap Retry." }
+        : { icon: Unplug, text: "Link dropped mid-handshake — auto-retrying. Keep the device awake." };
+    case "auth":
+      // Auth failures almost never resolve on their own — surface the
+      // re-pair instruction even while the orchestrator is still retrying.
+      return { icon: ShieldAlert, text: "Forget the device in Bluetooth settings, then re-pair and try again." };
+    case "not-found":
+      return ended
+        ? { icon: Signal, text: "Device is out of range or off. Wake it, move closer, then tap Retry." }
+        : { icon: Signal, text: "Can't see the device — check it's powered on and within a few meters." };
+    case "cancelled":
+      return { icon: RefreshCw, text: "Cancelled by you. Tap the device again to start a new connect." };
+    case "generic":
+    default:
+      return ended
+        ? { icon: RefreshCw, text: "Tap Retry. If it keeps failing, copy the log and share it for triage." }
+        : { icon: RefreshCw, text: "Auto-retrying. If this keeps happening, copy the log for a bug report." };
+  }
+}
+
 
 function ConnectionLogPanel({
   entries, onClear, now,
