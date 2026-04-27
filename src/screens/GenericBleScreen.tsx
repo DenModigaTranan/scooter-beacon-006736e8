@@ -76,8 +76,18 @@ export function GenericBleScreen() {
   const [connectedDevice, setConnectedDevice] = useState<GenericDevice | null>(null);
   const [services, setServices] = useState<GenericServiceInfo[]>([]);
   const [discovering, setDiscovering] = useState(false);
+  // Drives the per-attempt UI (attempt N/3, "retrying in 1s…", deadline bar).
+  const [connectPhase, setConnectPhase] = useState<ConnectPhase>({ kind: "idle" });
+  // Tick clock so the banner countdown re-renders every ~250ms while connecting.
+  const [now, setNow] = useState(() => Date.now());
 
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * AbortController for the ENTIRE connect sequence (all retries + backoffs).
+   * Created at the top of `connect()` and consulted at every await boundary
+   * so the user can bail at any time.
+   */
+  const connectAbortRef = useRef<AbortController | null>(null);
 
   // ---- scanning ----------------------------------------------------------
   const startScan = useCallback(async () => {
