@@ -8,6 +8,7 @@ import { CatalogScreen } from "@/screens/CatalogScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { DisclaimerScreen, useDisclaimerAccepted } from "@/screens/DisclaimerScreen";
 import { ProfileSelectScreen } from "@/screens/ProfileSelectScreen";
+import { GenericBleScreen } from "@/screens/GenericBleScreen";
 import { HeaderBar, TabBar, type TabKey } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProfileBanner } from "@/components/ProfileBanner";
