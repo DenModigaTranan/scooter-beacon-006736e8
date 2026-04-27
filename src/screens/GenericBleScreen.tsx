@@ -706,8 +706,13 @@ export function GenericBleScreen() {
           if (!connectedDevice) return;
           // Tag manual retries in the log so a sequence like
           // attempt-fail → backoff → User retry clicked → attempt-1 is
-          // unambiguous when reading back a debug trace.
-          pushLog("info", `User retry clicked (banner) → ${connectedDevice.name || connectedDevice.deviceId.slice(0, 17)}`);
+          // unambiguous when reading back a debug trace. Includes the
+          // current attempt number and connect phase so the entry can be
+          // correlated with the surrounding timeline at a glance.
+          pushLog(
+            "info",
+            `User retry clicked (banner) → ${connectedDevice.name || connectedDevice.deviceId.slice(0, 17)} · ${describeRetryContext(connectPhase, connState)}`,
+          );
           connect(connectedDevice);
         }}
       />
@@ -722,7 +727,10 @@ export function GenericBleScreen() {
         canRetry={!!connectedDevice && connState !== "connecting"}
         onRetry={() => {
           if (!connectedDevice) return;
-          pushLog("info", `User retry clicked (failure chip) → ${connectedDevice.name || connectedDevice.deviceId.slice(0, 17)}`);
+          pushLog(
+            "info",
+            `User retry clicked (failure chip) → ${connectedDevice.name || connectedDevice.deviceId.slice(0, 17)} · ${describeRetryContext(connectPhase, connState)}`,
+          );
           connect(connectedDevice);
         }}
         retryInSec={
