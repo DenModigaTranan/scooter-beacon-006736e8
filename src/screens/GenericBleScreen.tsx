@@ -1112,6 +1112,21 @@ function FailureSummaryChip({
                   Next
                 </span>
                 {next.text}
+                {/* Inline countdown — only while the orchestrator is actively
+                    waiting before the next attempt. Ticks via the parent's
+                    1Hz `now` clock that already drives the connect banner. */}
+                {!ended && retryInSec !== null && (
+                  <span
+                    className={cn(
+                      "mono text-[10px] ml-1.5 px-1.5 py-px rounded border border-current/30 align-middle inline-flex items-center gap-1",
+                      tone.icon,
+                    )}
+                    aria-live="polite"
+                  >
+                    <Clock className="w-2.5 h-2.5" aria-hidden />
+                    {retryInSec > 0 ? `Retrying in ${retryInSec}s` : "Retrying…"}
+                  </span>
+                )}
               </span>
             </div>
             {showRetry && (
