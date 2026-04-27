@@ -359,12 +359,13 @@ export function GenericBleScreen() {
       }
       setConnError(msg);
       setConnState("error");
+      pushLog("attempt-fail", `Connect sequence failed: ${msg}`);
       try { await genericBle.disconnect(); } catch { /* ignore */ }
     } finally {
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
       connectInFlightRef.current = false;
     }
-  }, [connState]);
+  }, [connState, pushLog]);
 
   const disconnect = useCallback(async () => {
     connectAbortRef.current?.abort();
@@ -374,7 +375,8 @@ export function GenericBleScreen() {
     setConnectPhase({ kind: "idle" });
     setConnectedDevice(null);
     setServices([]);
-  }, []);
+    pushLog("disconnect", "Disconnected by user");
+  }, [pushLog]);
 
   // ---- filtering ---------------------------------------------------------
   const filtered = useMemo(() => {
