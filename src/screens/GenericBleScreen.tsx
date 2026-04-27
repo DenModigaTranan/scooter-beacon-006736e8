@@ -243,6 +243,36 @@ export function GenericBleScreen() {
     connectAbortRef.current = ac;
     const aborted = () => ac.signal.aborted;
 
+    // Sequence-wide counters used to render a final "summary" log entry once
+    // the orchestration terminates (success, exhaustion, or cancellation).
+    const sequenceStartedAt = Date.now();
+    let attemptsTried = 0;       // every attempt that actually started
+    let attemptsSucceeded = 0;   // exactly 0 or 1 in current design
+    let attemptsFailed = 0;      // timeouts + plugin errors + early disconnects
+    let attemptsTimedOut = 0;    // subset of attemptsFailed
+
+    /**
+     * Emit the closing summary entry. Called from every terminal branch
+     * (success, failure-after-retries, cancellation) so the log always ends
+     * with a one-line "what just happened overall" recap.
+     */
+    const emitSummary = (
+      outcome: "success" | "failed" | "cancelled",
+    ) => {
+      const total = formatMs(Date.now() - sequenceStartedAt);
+      const verb =
+        outcome === "success"   ? "Connected"
+        : outcome === "cancelled" ? "Cancelled"
+        : "Failed";
+      const counts =
+        `${attemptsSucceeded} ok · ${attemptsFailed} failed` +
+        (attemptsTimedOut ? ` (${attemptsTimedOut} timeout${attemptsTimedOut === 1 ? "" : "s"})` : "");
+      pushLog(
+        "summary",
+        `${verb} after ${total} · ${attemptsTried}/${MAX_ATTEMPTS} attempt${attemptsTried === 1 ? "" : "s"} · ${counts}`,
+      );
+    };
+
     /**
      * Race the plugin's connect() against a hard timeout. Resolves when the
      * GATT link is up; rejects with a timeout/abort/plugin error otherwise.
