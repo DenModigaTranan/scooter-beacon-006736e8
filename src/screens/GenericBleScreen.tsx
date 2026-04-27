@@ -21,6 +21,7 @@ import {
   Bluetooth, Loader2, RefreshCw, Search, Signal, X, Zap, Check,
   AlertTriangle, WifiOff, Plug, PlugZap, ChevronRight, Download, Upload, Bell, BellOff,
   ChevronDown, ScrollText, Trash2, Copy, ClipboardCheck,
+  Clock, Unplug, ShieldAlert, HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
