@@ -21,9 +21,10 @@ type Target = "DRV" | "BMS" | "BLE";
 type Step = 1 | 2 | 3 | 4 | 5;
 
 export function FlashScreen() {
-  const { telemetry, info, appendLog, clearLog, flashLog } = useScooter();
+  const { telemetry, info, appendLog, clearLog, flashLog, rerunHandshake } = useScooter();
   const pendingFlash = useScooterStore((s) => s.pendingFlash);
   const setPendingFlash = useScooterStore((s) => s.setPendingFlash);
+  const handshake = useScooterStore((s) => s.handshake);
   const [step, setStep] = useState<Step>(1);
   const [target, setTarget] = useState<Target>("DRV");
   const [selected, setSelected] = useState<FirmwareEntry | null>(null);
@@ -35,6 +36,7 @@ export function FlashScreen() {
   const [totalBytes, setTotalBytes] = useState(0);
   const [flashing, setFlashing] = useState(false);
   const [flashResult, setFlashResult] = useState<"success" | "error" | null>(null);
+  const [retryingHandshake, setRetryingHandshake] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const catalogQ = useQuery({ queryKey: ["fw-catalog"], queryFn: ({ signal }) => fetchCatalog(signal) });
@@ -50,8 +52,14 @@ export function FlashScreen() {
     const phone = true; // simplified — could read battery via Web API on Android
     const fwOk = !!(selected || customFile);
     const confirmOk = confirmText === "CONFIRM";
-    return { battery, moving, phone, fwOk, confirmOk, all: battery && moving && phone && fwOk && confirmOk };
-  }, [telemetry, selected, customFile, confirmText]);
+    const handshakeOk = !!handshake?.ok;
+    return { battery, moving, phone, fwOk, confirmOk, handshakeOk, all: battery && moving && phone && fwOk && confirmOk && handshakeOk };
+  }, [telemetry, selected, customFile, confirmText, handshake]);
+
+  const onRetryHandshake = async () => {
+    setRetryingHandshake(true);
+    try { await rerunHandshake(); } finally { setRetryingHandshake(false); }
+  };
 
   // If the user picked a release from the Catalog screen, jump straight to
   // pre-flight checks with the right target + entry pre-selected. Then clear
@@ -239,12 +247,34 @@ export function FlashScreen() {
             <SectionTitle>3. Pre-flight checks</SectionTitle>
 
             <div className="panel p-4 mt-3 space-y-1">
+              <Check2
+                ok={checks.handshakeOk}
+                label="BLE protocol handshake"
+                value={handshake ? (handshake.ok ? "validated" : handshake.reason) : "pending"}
+              />
               <Check2 ok={checks.battery} label={`Scooter battery ≥ 50%`} value={`${Math.round(telemetry?.batteryPct ?? 0)}%`} />
               <Check2 ok={checks.moving} label="Scooter stationary" value={`${(telemetry?.speedKph ?? 0).toFixed(1)} km/h`} />
               <Check2 ok={checks.phone} label="Phone battery ≥ 30%" value="ok" />
               <Check2 ok={checks.fwOk} label="Firmware selected" value={selected?.version ?? customFile?.name ?? "—"} />
               <Check2 ok={!!info} label={`${target} version detected`} value={info ? (target === "DRV" ? info.drvVersion : target === "BMS" ? info.bmsVersion : info.bleVersion) : "—"} />
             </div>
+
+            {!checks.handshakeOk && (
+              <div className="panel mt-3 p-3 border-destructive/40 flex items-center justify-between gap-3">
+                <div className="text-xs text-muted-foreground leading-relaxed">
+                  Flashing is disabled until the device passes the M365 GATT handshake.
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onRetryHandshake}
+                  disabled={retryingHandshake}
+                  className="mono shrink-0"
+                >
+                  {retryingHandshake ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "RETRY"}
+                </Button>
+              </div>
+            )}
 
             <div className="panel mt-3 p-4 border-warning/40">
               <div className="flex items-center gap-2 mb-2">

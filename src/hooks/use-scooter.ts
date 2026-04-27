@@ -35,14 +35,27 @@ export function useScooter() {
   const connect = useCallback(async (device: DiscoveredDevice) => {
     store.setSelected(device);
     store.setState("connecting");
+    store.setHandshake(null);
     try {
       await scooter.connect(device.deviceId, () => {
         store.setState("disconnected");
         store.setInfo(null);
         store.setTelemetry(null);
+        store.setHandshake(null);
       });
       await haptic(ImpactStyle.Medium);
       store.setState("connected");
+
+      // Validate the GATT layout BEFORE any read/write so we never talk
+      // M365 protocol to a non-M365 peripheral that just happens to advertise
+      // a similar name.
+      const hs = await scooter.handshake({ onLog: store.appendLog });
+      store.setHandshake(hs);
+      if (!hs.ok) {
+        store.setError(`Handshake failed: ${hs.reason}`);
+        return;
+      }
+
       const info = await scooter.readInfo();
       store.setInfo(info);
       // start telemetry polling
@@ -64,6 +77,7 @@ export function useScooter() {
     store.setSelected(null);
     store.setInfo(null);
     store.setTelemetry(null);
+    store.setHandshake(null);
   }, [store]);
 
   const writeSerialAndVerify = useCallback(async (s: string, maxAttempts = 1) => {
@@ -81,6 +95,12 @@ export function useScooter() {
     store.setInfo(info);
   }, [store]);
 
+  const rerunHandshake = useCallback(async () => {
+    const hs = await scooter.handshake({ onLog: store.appendLog });
+    store.setHandshake(hs);
+    return hs;
+  }, [store]);
+
   return {
     ...store,
     scan,
@@ -88,6 +108,7 @@ export function useScooter() {
     disconnect,
     writeSerialAndVerify,
     refreshInfo,
+    rerunHandshake,
     isNative: Capacitor.isNativePlatform(),
   };
 }

@@ -25,10 +25,22 @@ export const M365 = {
   ADDR: { ESC: 0x20, BLE: 0x21, BMS: 0x22, APP: 0x23 },
   CMD: { READ: 0x01, WRITE: 0x03, UPDATE: 0x09 },
 
-  /** Primary service & characteristics (community-documented). */
+  /** Primary service & characteristics (community-documented).
+   *  The Xiaomi M365 family advertises FE95 as the primary service and exposes
+   *  a write characteristic and a notify characteristic with these UUIDs. */
   SERVICE: "0000fe95-0000-1000-8000-00805f9b34fb",
-  CHAR_RX: "0000fe95-0000-1000-8000-00805f9b34fb", // write
+  CHAR_RX: "0000fe95-0000-1000-8000-00805f9b34fb", // write (no response)
   CHAR_TX: "0000fe95-0000-1000-8000-00805f9b34fb", // notify
+
+  /** What a successful handshake must observe on the device's GATT table. */
+  HANDSHAKE: {
+    /** Service UUIDs that MUST be present, in lowercase. */
+    REQUIRED_SERVICES: ["0000fe95-0000-1000-8000-00805f9b34fb"] as const,
+    /** Characteristic UUIDs we must find under SERVICE. */
+    REQUIRED_CHARS: ["0000fe95-0000-1000-8000-00805f9b34fb"] as const,
+    /** Properties we need (write + notify) on the matched characteristic. */
+    REQUIRED_PROPS: ["write", "notify"] as const,
+  },
 
   /** Known register offsets for read commands (subset, ESC unless noted). */
   REG: {
