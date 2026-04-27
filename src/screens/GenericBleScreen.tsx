@@ -56,6 +56,25 @@ type ConnectPhase =
   | { kind: "backoff"; nextAttempt: number; resumeAt: number; lastError: string };
 
 /**
+ * Compact human-readable description of where the orchestrator is in a
+ * connect sequence. Used to enrich manual-retry log lines so a "User retry
+ * clicked" entry can be correlated with the surrounding attempt timeline
+ * (e.g. "phase=backoff before attempt 2/3, prior connState=connecting").
+ */
+function describeRetryContext(phase: ConnectPhase, connState: ConnState): string {
+  const parts: string[] = [];
+  if (phase.kind === "connecting") {
+    parts.push(`phase=connecting attempt ${phase.attempt}/${MAX_ATTEMPTS}`);
+  } else if (phase.kind === "backoff") {
+    parts.push(`phase=backoff before attempt ${phase.nextAttempt}/${MAX_ATTEMPTS}`);
+  } else {
+    parts.push("phase=idle");
+  }
+  parts.push(`connState=${connState}`);
+  return parts.join(", ");
+}
+
+/**
  * Per-attempt outcome tile shown in the connect progress strip. `pending` is
  * the initial blank state, `active` is the in-flight attempt, and the rest
  * are terminal. The strip is a fixed-length array of MAX_ATTEMPTS entries so
