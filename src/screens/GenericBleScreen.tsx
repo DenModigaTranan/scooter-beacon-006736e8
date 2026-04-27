@@ -32,6 +32,7 @@ import {
   type GenericDevice, type GenericServiceInfo, type GenericCharInfo,
 } from "@/lib/generic-ble";
 import { detectNinebot } from "@/lib/ninebot-detect";
+import { matchNinebotModel } from "@/lib/ninebot-models";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
 type ConnState = "disconnected" | "connecting" | "connected" | "error";
@@ -1863,6 +1864,16 @@ function DeviceRow({
     serviceUuids: device.serviceUuids,
     manufacturerIds: device.manufacturerIds,
   });
+  // Only resolve a specific model when the cheap detector already said
+  // "this is Ninebot-shaped" — otherwise we'd run the registry lookup on
+  // every random device in the scan, which is wasted work.
+  const ninebotModel = ninebot
+    ? matchNinebotModel({
+        name: device.name,
+        serviceUuids: device.serviceUuids,
+        manufacturerIds: device.manufacturerIds,
+      })
+    : null;
   const ninebotTone =
     ninebot?.confidence === "high" ? "text-primary-glow border-primary-glow/40"
     : ninebot?.confidence === "medium" ? "text-primary border-primary/40"
@@ -1898,9 +1909,23 @@ function DeviceRow({
                   "chip text-[8px] tracking-widest border",
                   ninebotTone,
                 )}
-                title={`Ninebot (${ninebot.confidence}) — ${ninebot.reasons.join("; ")}`}
+                title={[
+                  `Ninebot (${ninebot.confidence}) — ${ninebot.reasons.join("; ")}`,
+                  ninebotModel
+                    ? `Model: ${ninebotModel.model.displayName} (via ${ninebotModel.via}${ninebotModel.evidence ? ` "${ninebotModel.evidence}"` : ""})`
+                    : null,
+                  ninebotModel
+                    ? `Capabilities: ${ninebotModel.model.capabilities.length}`
+                    : null,
+                ].filter(Boolean).join("\n")}
               >
-                {ninebot.label.toUpperCase()}
+                {/* Prefer the model's short label when we matched something
+                    more specific than the fallback — otherwise the generic
+                    "NINEBOT" tag stays. */}
+                {(ninebotModel && ninebotModel.via !== "fallback"
+                  ? ninebotModel.model.shortLabel
+                  : ninebot.label
+                ).toUpperCase()}
               </span>
             )}
             {device.mock && (
