@@ -464,6 +464,52 @@ export function GenericBleScreen() {
     );
   }, [devices, filter]);
 
+  /**
+   * Most recent failure recap, derived purely from the log so it stays in
+   * sync with whatever's already been pushed.
+   *
+   * Strategy: walk the log newest-first and stop at the first terminal marker
+   * for the current run. We only return a summary when the most recent run
+   * actually ended badly (`failed` or `cancelled`). A successful run is
+   * terminated by a `summary` of outcome "Connected", which suppresses the
+   * chip — the connection banner already shows that state.
+   */
+  const lastFailure = useMemo(() => {
+    if (log.length === 0) return null;
+    let lastFail: LogEntry | null = null;
+    let lastSummary: LogEntry | null = null;
+    for (const e of log) {
+      // Newest-first iteration; stop as soon as we hit a sequence boundary
+      // ("info" = "Connect requested" begins a new run).
+      if (e.kind === "info" && e.message.startsWith("Connect requested")) break;
+      if (!lastSummary && e.kind === "summary") lastSummary = e;
+      if (!lastFail && (e.kind === "attempt-fail" || e.kind === "timeout")) lastFail = e;
+    }
+    if (!lastFail) return null;
+    // If the run ended in success, don't surface the prior failure — the
+    // current state is "connected" and the chip would just be noise.
+    if (lastSummary?.message.startsWith("Connected")) return null;
+
+    // Parse "Attempt N …" out of the message to render a compact chip.
+    const m = lastFail.message.match(/^Attempt\s+(\d+)\b/i);
+    const attempt = m ? Number(m[1]) : null;
+    // Strip the "Attempt N failed (took Xs):" / "Attempt N hit timeout (…)"
+    // prefix so the reason reads cleanly on its own.
+    const reason = lastFail.message
+      .replace(/^Attempt\s+\d+\s+failed(?:\s+\([^)]*\))?:\s*/i, "")
+      .replace(/^Attempt\s+\d+\s+hit timeout\s*\(?[^)]*\)?\s*/i, "timed out")
+      .trim();
+    const isTimeout = lastFail.kind === "timeout";
+    const totalMs = lastSummary ? lastSummary.at - lastFail.at + 0 : null;
+    void totalMs;
+    // Prefer the sequence's own duration if a summary exists; otherwise
+    // approximate "since failure" relative to now.
+    const totalLabel = lastSummary
+      ? lastSummary.message.match(/after\s+([0-9.]+(?:ms|s))/i)?.[1] ?? null
+      : null;
+    return { entry: lastFail, attempt, reason, isTimeout, totalLabel, ended: !!lastSummary };
+  }, [log]);
+
   return (
     <div className="px-4 pt-4 pb-28 max-w-md mx-auto space-y-4 animate-fade-in">
       {/* Connection status banner */}
@@ -477,6 +523,9 @@ export function GenericBleScreen() {
         onCancel={cancelConnect}
         onRetry={() => connectedDevice && connect(connectedDevice)}
       />
+
+      {/* One-line failure summary — only shown when the latest run ended badly */}
+      <FailureSummaryChip data={lastFailure} now={now} />
 
       {/* Connection log — small expandable panel of timestamped events */}
       <ConnectionLogPanel entries={log} onClear={clearLog} now={now} />
@@ -657,6 +706,85 @@ export function GenericBleScreen() {
  * The header always shows the latest event so the user gets a one-line status
  * even without expanding.
  */
+/**
+ * Compact one-liner shown above the log panel summarizing the most recent
+ * failure: attempt number, reason, and (when the sequence has fully ended)
+ * the total duration of that run. Auto-hides on success.
+ */
+function FailureSummaryChip({
+  data, now,
+}: {
+  data: {
+    entry: LogEntry;
+    attempt: number | null;
+    reason: string;
+    isTimeout: boolean;
+    totalLabel: string | null;
+    ended: boolean;
+  } | null;
+  now: number;
+}) {
+  if (!data) return null;
+  const { entry, attempt, reason, isTimeout, totalLabel, ended } = data;
+  const ageSec = Math.max(0, Math.round((now - entry.at) / 1000));
+  const ageLabel =
+    ageSec < 1 ? "just now"
+    : ageSec < 60 ? `${ageSec}s ago`
+    : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m ago`
+    : `${Math.floor(ageSec / 3600)}h ago`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={cn(
+        "panel p-2.5 flex items-start gap-2.5 border",
+        isTimeout ? "border-warning/40 bg-warning/5" : "border-destructive/40 bg-destructive/5",
+      )}
+      role="status"
+      aria-live="polite"
+    >
+      <div className={cn(
+        "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
+        isTimeout ? "bg-warning/20" : "bg-destructive/20",
+      )}>
+        <AlertTriangle className={cn(
+          "w-3.5 h-3.5",
+          isTimeout ? "text-warning" : "text-destructive",
+        )} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className={cn(
+          "mono text-[10px] tracking-[0.22em] uppercase flex items-center gap-2 flex-wrap",
+          isTimeout ? "text-warning" : "text-destructive",
+        )}>
+          <span>Last failure</span>
+          {attempt !== null && (
+            <span className="text-muted-foreground/80 normal-case tracking-normal">
+              attempt {attempt}/{MAX_ATTEMPTS}
+            </span>
+          )}
+          {totalLabel && (
+            <span className="text-muted-foreground/80 normal-case tracking-normal">
+              · total {totalLabel}
+            </span>
+          )}
+          {!ended && (
+            <span className="text-muted-foreground/80 normal-case tracking-normal">
+              · in progress
+            </span>
+          )}
+          <span className="text-muted-foreground/60 normal-case tracking-normal">· {ageLabel}</span>
+        </div>
+        <div className="mono text-[11px] text-foreground/90 leading-snug break-words">
+          {reason}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+
 function ConnectionLogPanel({
   entries, onClear, now,
 }: {
