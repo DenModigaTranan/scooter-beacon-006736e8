@@ -291,6 +291,8 @@ export function GenericBleScreen() {
 
         const timeoutId = setTimeout(() => {
           finish(() => reject(new Error(`timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`)));
+          attemptsFailed++;
+          attemptsTimedOut++;
           pushLog(
             "timeout",
             `Attempt ${attempt} hit timeout (${formatMs(elapsed())} / cap ${cap})`,
