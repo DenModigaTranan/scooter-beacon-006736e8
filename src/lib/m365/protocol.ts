@@ -151,6 +151,31 @@ export function decodeVersion(word: number): string {
 }
 
 /**
+ * Map a 16-bit board model id to a human label. The community has documented
+ * a handful of values; unknown ids fall back to a hex string so the user can
+ * still identify and report the board.
+ */
+const MODEL_NAMES: Record<number, string> = {
+  0x0001: "M365 (1st gen)",
+  0x0002: "M365 Pro",
+  0x0003: "Essential",
+  0x0004: "1S",
+  0x0005: "Pro 2",
+  0x0006: "3 / Lite",
+};
+export function decodeModelId(word: number): string {
+  if (word === 0 || word === 0xffff) return "—";
+  const name = MODEL_NAMES[word];
+  return name ? `${name} (0x${word.toString(16).padStart(4, "0")})` : `0x${word.toString(16).padStart(4, "0")}`;
+}
+
+/** Render an error/COC word as a 4-digit hex code. */
+export function decodeWordHex(word: number): string {
+  if (word === 0xffff) return "—";
+  return `0x${word.toString(16).padStart(4, "0").toUpperCase()}`;
+}
+
+/**
  * Decode a packed BMS manufacture date word.
  * Community-documented packing (16 bits, little-endian on the wire):
  *   bits 15..9 = year offset from 2000  (7 bits)
