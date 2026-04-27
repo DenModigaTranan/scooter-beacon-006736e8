@@ -133,9 +133,9 @@ function buildNinebotMockServices(): MockService[] {
   // ---- Wire helpers (kept local to avoid a circular import) ------------
   const HDR = [0x5a, 0xa5];
   const APP = 0x21, ESC = 0x20, BLE = 0x22;
-  const CMD_READ = 0x01, CMD_REPLY = 0x04;
+  const CMD_READ = 0x01, CMD_WRITE = 0x03, CMD_REPLY = 0x04;
   const CMD_PRE = 0x5b, CMD_SETPWD = 0x5c, CMD_AUTH_OK = 0x5d;
-  const REG = { BATTERY: 0xb1, SPEED: 0xb5, MODE: 0x75, ODO: 0x29, LOCK: 0x70 };
+  const REG = { BATTERY: 0xb1, SPEED: 0xb5, MODE: 0x75, ODO: 0x29, LOCK: 0x70, LIGHTS: 0x69, BEEP: 0x88 };
 
   const cks = (body: Uint8Array): number => {
     let s = 0; for (let i = 0; i < body.length; i++) s += body[i];
