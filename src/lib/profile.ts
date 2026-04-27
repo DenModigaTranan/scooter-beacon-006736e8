@@ -37,8 +37,8 @@ export const PROFILES: ProfileMeta[] = [
     key: "generic-ble",
     label: "Other / Generic BLE",
     shortLabel: "Generic",
-    description: "Any BLE peripheral. Manual service & characteristic browsing.",
-    status: "coming-soon",
+    description: "Any BLE peripheral. Live scanner with GATT discovery — no protocol writes.",
+    status: "supported",
   },
 ];
 
