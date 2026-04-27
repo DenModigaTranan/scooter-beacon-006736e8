@@ -730,6 +730,7 @@ export function GenericBleScreen() {
             ? Math.max(0, Math.ceil((connectPhase.resumeAt - now) / 1000))
             : null
         }
+        onCancelRetry={cancelConnect}
       />
 
       {/* Connection log — small expandable panel of timestamped events */}
@@ -917,7 +918,7 @@ export function GenericBleScreen() {
  * the total duration of that run. Auto-hides on success.
  */
 function FailureSummaryChip({
-  data, now, canRetry, onRetry, retryInSec,
+  data, now, canRetry, onRetry, retryInSec, onCancelRetry,
 }: {
   data: {
     entry: LogEntry;
@@ -938,6 +939,10 @@ function FailureSummaryChip({
   // null when not in a backoff phase. Drives the inline "Retrying in Xs"
   // countdown next to the Next hint; ticks once per second via `now`.
   retryInSec: number | null;
+  // Aborts the in-flight connect sequence (including any pending backoff
+  // wait). Surfaced inline next to the countdown so users can stop the
+  // auto-retry loop without scrolling back up to the status banner.
+  onCancelRetry: () => void;
 }) {
   // Click-to-expand drawer state. Auto-collapses when the chip is hidden
   // (data === null) so a fresh successful run doesn't reopen with stale rows
@@ -1168,16 +1173,34 @@ function FailureSummaryChip({
                     waiting before the next attempt. Ticks via the parent's
                     1Hz `now` clock that already drives the connect banner. */}
                 {!ended && retryInSec !== null && (
-                  <span
-                    className={cn(
-                      "mono text-[10px] ml-1.5 px-1.5 py-px rounded border border-current/30 align-middle inline-flex items-center gap-1",
-                      tone.icon,
-                    )}
-                    aria-live="polite"
-                  >
-                    <Clock className="w-2.5 h-2.5" aria-hidden />
-                    {retryInSec > 0 ? `Retrying in ${retryInSec}s` : "Retrying…"}
-                  </span>
+                  <>
+                    <span
+                      className={cn(
+                        "mono text-[10px] ml-1.5 px-1.5 py-px rounded border border-current/30 align-middle inline-flex items-center gap-1",
+                        tone.icon,
+                      )}
+                      aria-live="polite"
+                    >
+                      <Clock className="w-2.5 h-2.5" aria-hidden />
+                      {retryInSec > 0 ? `Retrying in ${retryInSec}s` : "Retrying…"}
+                    </span>
+                    {/* Inline cancel — aborts the orchestrator's connect
+                        sequence (including the pending backoff wait) so the
+                        user can stop the loop without scrolling to the
+                        status banner's Cancel button. */}
+                    <button
+                      type="button"
+                      onClick={onCancelRetry}
+                      title="Stop the auto-retry loop"
+                      className={cn(
+                        "mono text-[10px] ml-1 px-1.5 py-px rounded border border-current/30 align-middle inline-flex items-center gap-1 transition-colors hover:bg-foreground/[0.06]",
+                        tone.icon,
+                      )}
+                    >
+                      <X className="w-2.5 h-2.5" aria-hidden />
+                      Cancel retry
+                    </button>
+                  </>
                 )}
               </span>
             </div>
