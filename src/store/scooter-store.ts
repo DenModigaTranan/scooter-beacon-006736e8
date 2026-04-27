@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DiscoveredDevice, ScooterInfo, Telemetry } from "@/lib/m365/scooter-service";
+import type { DiscoveredDevice, ScooterInfo, Telemetry, HandshakeResult } from "@/lib/m365/scooter-service";
 import type { FirmwareEntry } from "@/lib/m365/catalog";
 
 export type ConnectionState = "idle" | "scanning" | "connecting" | "connected" | "disconnected" | "error";
@@ -14,6 +14,8 @@ interface ScooterStore {
   flashLog: string[];
   /** A firmware entry queued from the Catalog screen for the Flash flow to pick up. */
   pendingFlash: FirmwareEntry | null;
+  /** Latest BLE GATT handshake result, or null if not yet validated. */
+  handshake: HandshakeResult | null;
 
   setState: (s: ConnectionState) => void;
   addDevice: (d: DiscoveredDevice) => void;
@@ -25,6 +27,7 @@ interface ScooterStore {
   appendLog: (line: string) => void;
   clearLog: () => void;
   setPendingFlash: (fw: FirmwareEntry | null) => void;
+  setHandshake: (h: HandshakeResult | null) => void;
 }
 
 export const useScooterStore = create<ScooterStore>((set) => ({
@@ -36,6 +39,7 @@ export const useScooterStore = create<ScooterStore>((set) => ({
   errorMessage: null,
   flashLog: [],
   pendingFlash: null,
+  handshake: null,
 
   setState: (s) => set({ state: s }),
   addDevice: (d) =>
@@ -48,4 +52,5 @@ export const useScooterStore = create<ScooterStore>((set) => ({
   appendLog: (line) => set((p) => ({ flashLog: [...p.flashLog.slice(-500), line] })),
   clearLog: () => set({ flashLog: [] }),
   setPendingFlash: (fw) => set({ pendingFlash: fw }),
+  setHandshake: (h) => set({ handshake: h }),
 }));
