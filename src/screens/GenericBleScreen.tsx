@@ -848,6 +848,20 @@ export function GenericBleScreen() {
                 <span className="mono text-[10px] text-muted-foreground">{services.length} found</span>
               )}
             </div>
+            {/* Capability gating banner — explains why some buttons are
+                disabled before the user wonders. Only shown when a model
+                is actively governing the rows AND it blocks at least
+                one class; silent otherwise. */}
+            {activeModel && (allowsRead === false || allowsWrite === false) && (
+              <div className="mb-2 rounded-sm border border-warning/30 bg-warning/5 px-2 py-1.5 mono text-[10px] text-warning leading-relaxed">
+                <span className="tracking-widest uppercase mr-1">Gated by {activeModel.shortLabel}:</span>
+                {allowsRead === false && allowsWrite === false
+                  ? "no read or write commands supported."
+                  : allowsRead === false
+                    ? "read commands disabled."
+                    : "write commands disabled."}
+              </div>
+            )}
             {!discovering && services.length === 0 && (
               <div className="text-xs text-muted-foreground py-2">
                 No services exposed (or discovery not supported on this platform).
