@@ -4,6 +4,7 @@ import { Bluetooth, Loader2, RefreshCw, Signal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useScooter } from "@/hooks/use-scooter";
 import { StatusBadge } from "@/components/StatusBadge";
+import { PairedScooters } from "@/components/PairedScooters";
 
 function rssiBars(rssi: number) {
   if (rssi >= -55) return 4;
@@ -13,7 +14,7 @@ function rssiBars(rssi: number) {
 }
 
 export function ConnectScreen() {
-  const { state, devices, scan, connect, isNative, errorMessage } = useScooter();
+  const { state, devices, scan, connect, isNative, errorMessage, selected } = useScooter();
 
   useEffect(() => {
     if (state === "idle" && devices.length === 0) scan();
@@ -39,6 +40,14 @@ export function ConnectScreen() {
               <div className="chip chip-warn mt-4">PREVIEW — mock devices</div>
             )}
           </div>
+
+          <PairedScooters
+            busy={state === "connecting" || state === "scanning"}
+            connectingId={state === "connecting" ? selected?.deviceId ?? null : null}
+            onReconnect={(deviceId, name) =>
+              connect({ deviceId, name, rssi: -127 })
+            }
+          />
 
           <div className="flex items-center justify-between mb-3">
             <div className="mono text-[11px] tracking-[0.22em] uppercase text-muted-foreground">Nearby</div>

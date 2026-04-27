@@ -4,6 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { scooter } from "@/lib/m365/scooter-service";
 import { useScooterStore } from "@/store/scooter-store";
 import type { DiscoveredDevice } from "@/lib/m365/scooter-service";
+import { upsertPairedProfile } from "@/lib/paired-profiles";
 
 const haptic = async (style: ImpactStyle = ImpactStyle.Light) => {
   if (!Capacitor.isNativePlatform()) return;
@@ -58,6 +59,9 @@ export function useScooter() {
 
       const info = await scooter.readInfo();
       store.setInfo(info);
+      // Persist (or refresh) the paired profile keyed by BLE address so the
+      // user can re-connect with one tap from the Connect screen.
+      upsertPairedProfile({ deviceId: device.deviceId, name: device.name }, info);
       // start telemetry polling
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(async () => {

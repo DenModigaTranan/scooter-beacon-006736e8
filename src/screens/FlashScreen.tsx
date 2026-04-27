@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { FlashStepList, type Phase, type PhaseId, type PhaseState } from "@/components/FlashStepList";
 import { FlashLogConsole } from "@/components/FlashLogConsole";
 import { formatBytes, formatDuration, formatRate } from "@/lib/format";
+import { recordPairedFlash } from "@/lib/paired-profiles";
 
 type Target = "DRV" | "BMS" | "BLE";
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -34,7 +35,8 @@ const MIN_PHONE_BATTERY_PCT = 30;
 const ARM_COUNTDOWN_S = 3;
 
 export function FlashScreen() {
-  const { telemetry, info, appendLog, clearLog, flashLog, rerunHandshake, state: connState } = useScooter();
+  const { telemetry, info, appendLog, clearLog, flashLog, rerunHandshake, state: connState, refreshInfo } = useScooter();
+  const selectedDevice = useScooterStore((s) => s.selected);
   const pendingFlash = useScooterStore((s) => s.pendingFlash);
   const setPendingFlash = useScooterStore((s) => s.setPendingFlash);
   const handshake = useScooterStore((s) => s.handshake);
@@ -324,6 +326,17 @@ export function FlashScreen() {
       setFlashResult("success");
       setStep(5);
       toast.success(`${target} flashed`);
+      // Persist outcome against the paired profile so the user sees what
+      // they last flashed when they re-connect.
+      if (selectedDevice) {
+        const label = customFile?.name ?? selected?.version ?? "unknown";
+        recordPairedFlash(selectedDevice.deviceId, {
+          target, label, size: firmwareBytes.length, at: Date.now(), result: "success",
+        });
+      }
+      // Refresh info so the paired-profile snapshot picks up new fw versions
+      // on the next upsert (and the UI shows them immediately).
+      refreshInfo().catch(() => {});
     } catch (e) {
       finishedAtRef.current = Date.now();
       if (e instanceof FlashAbortError) {
@@ -336,10 +349,20 @@ export function FlashScreen() {
           });
           return next;
         });
-        setFlashResult(e.phase === "safe" ? "aborted-safe" : "aborted-unsafe");
+        const r = e.phase === "safe" ? "aborted-safe" : "aborted-unsafe";
+        setFlashResult(r);
         setFlashError(e.message);
         if (e.phase === "safe") toast(`Flash aborted safely`);
         else toast.error(`Flash aborted mid-write — REFLASH IMMEDIATELY`);
+        if (selectedDevice) {
+          recordPairedFlash(selectedDevice.deviceId, {
+            target,
+            label: customFile?.name ?? selected?.version ?? "unknown",
+            size: bytesWritten,
+            at: Date.now(),
+            result: r,
+          });
+        }
       } else {
         appendLog(`! ERROR ${e}`);
         setPhaseStates((s) => {
@@ -352,6 +375,15 @@ export function FlashScreen() {
         setFlashResult("error");
         setFlashError(String(e));
         toast.error("Flash failed");
+        if (selectedDevice) {
+          recordPairedFlash(selectedDevice.deviceId, {
+            target,
+            label: customFile?.name ?? selected?.version ?? "unknown",
+            size: bytesWritten,
+            at: Date.now(),
+            result: "error",
+          });
+        }
       }
       setStep(5);
     } finally {
