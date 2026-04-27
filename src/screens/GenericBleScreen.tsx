@@ -108,6 +108,95 @@ const LOG_KIND_META: Record<LogKind, { label: string; cls: string; dot: string }
   "summary":       { label: "SUMMARY",  cls: "text-foreground",        dot: "bg-foreground/70" },
 };
 
+/**
+ * Visual + copywriting metadata for the failure-summary chip. Each category
+ * picks its own icon, headline, and tone so the user can tell at a glance
+ * whether the run died because the device never answered (timeout), the link
+ * dropped mid-handshake (disconnect), the OS denied access (auth/permission),
+ * the device couldn't be located (not-found), or something else entirely.
+ */
+type FailureCategory = "timeout" | "disconnect" | "auth" | "not-found" | "cancelled" | "generic";
+
+interface FailureClassification {
+  category: FailureCategory;
+  icon: LucideIcon;
+  label: string;
+  tone: "warning" | "destructive" | "muted";
+}
+
+const FAILURE_TONE: Record<FailureClassification["tone"], {
+  border: string; bg: string; iconBg: string; icon: string; header: string;
+}> = {
+  warning: {
+    border: "border-warning/40",
+    bg: "bg-warning/5",
+    iconBg: "bg-warning/20",
+    icon: "text-warning",
+    header: "text-warning",
+  },
+  destructive: {
+    border: "border-destructive/40",
+    bg: "bg-destructive/5",
+    iconBg: "bg-destructive/20",
+    icon: "text-destructive",
+    header: "text-destructive",
+  },
+  muted: {
+    border: "border-border/60",
+    bg: "bg-secondary/30",
+    iconBg: "bg-secondary",
+    icon: "text-muted-foreground",
+    header: "text-muted-foreground",
+  },
+};
+
+/**
+ * Best-effort classification of a connect failure based on the log entry's
+ * kind + cleaned reason text. Patterns intentionally lean permissive — both
+ * iOS-style ("Authorization") and Android-style ("permission denied",
+ * "GATT_INSUFFICIENT_AUTH") wordings are matched so the chip works across
+ * platforms without us having to plumb structured error codes through every
+ * layer.
+ */
+function classifyFailure(kind: LogKind, reason: string): FailureClassification {
+  const r = reason.toLowerCase();
+  if (kind === "timeout" || r.includes("timed out") || r.includes("timeout")) {
+    return { category: "timeout", icon: Clock, label: "Timeout", tone: "warning" };
+  }
+  if (kind === "cancel" || r === "cancelled" || r.startsWith("cancelled")) {
+    return { category: "cancelled", icon: X, label: "Cancelled", tone: "muted" };
+  }
+  if (
+    r.includes("disconnected before gatt") ||
+    (r.includes("gatt") && (r.includes("disconnect") || r.includes("dropped"))) ||
+    r.includes("link lost") ||
+    r.includes("peer disconnected")
+  ) {
+    return { category: "disconnect", icon: Unplug, label: "Link dropped", tone: "destructive" };
+  }
+  if (
+    r.includes("auth") ||
+    r.includes("permission") ||
+    r.includes("denied") ||
+    r.includes("unauthorized") ||
+    r.includes("not authorized") ||
+    r.includes("encryption") ||
+    r.includes("bonding") ||
+    r.includes("pair")
+  ) {
+    return { category: "auth", icon: ShieldAlert, label: "Auth required", tone: "destructive" };
+  }
+  if (
+    r.includes("not found") ||
+    r.includes("unreachable") ||
+    r.includes("no such device") ||
+    r.includes("device gone")
+  ) {
+    return { category: "not-found", icon: HelpCircle, label: "Device unreachable", tone: "warning" };
+  }
+  return { category: "generic", icon: AlertTriangle, label: "Last failure", tone: "destructive" };
+}
+
 function rssiBars(rssi: number): number {
   if (rssi >= -55) return 4;
   if (rssi >= -65) return 3;
