@@ -345,7 +345,9 @@ export function GenericBleScreen() {
             setConnectedDevice(null);
             setServices([]);
           } else {
-            finish(() => reject(new Error(`disconnected before GATT ready (after ${formatMs(elapsed())})`)));
+            const took = elapsed();
+            attemptDurationsMs.push(took);
+            finish(() => reject(new Error(`disconnected before GATT ready (after ${formatMs(took)})`)));
           }
         }).then(
           () => {
@@ -353,6 +355,7 @@ export function GenericBleScreen() {
             clearTimeout(timeoutId);
             ac.signal.removeEventListener("abort", onAbort);
             attemptsSucceeded++;
+            attemptDurationsMs.push(took);
             finish(() => resolve());
             pushLog(
               "attempt-ok",
@@ -367,6 +370,7 @@ export function GenericBleScreen() {
             // Annotate the rejection with timing so the outer loop can render
             // a uniform "took Xs" tail in the FAIL log entry.
             (e as Error & { tookMs?: number }).tookMs = took;
+            attemptDurationsMs.push(took);
             finish(() => reject(e));
           },
         );
