@@ -50,9 +50,71 @@ interface Props {
   busy: boolean;
   /** When set, the deviceId currently being reconnected to (shows spinner). */
   connectingId?: string | null;
+  /**
+   * Live BLE state from the scooter store. Used together with `activeDeviceId`
+   * to render a per-row status pill so the user can see exactly which paired
+   * device is connecting / connected / failed while a reconnect is in flight.
+   */
+  state?:
+    | "idle"
+    | "scanning"
+    | "connecting"
+    | "connected"
+    | "disconnected"
+    | "error";
+  /** deviceId currently selected/connected by the scooter store. */
+  activeDeviceId?: string | null;
+  /** True once the connected device passed the M365 GATT handshake. */
+  handshakeOk?: boolean;
+  /**
+   * Last reason the handshake failed (or any other connect-time error).
+   * Surfaced as a small destructive sub-line on the active row.
+   */
+  errorMessage?: string | null;
 }
 
-export function PairedScooters({ onReconnect, busy, connectingId }: Props) {
+/** Per-row connection status, derived from the global scooter state. */
+type RowStatus =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "handshake-failed"
+  | "disconnected"
+  | "error";
+
+function deriveRowStatus(
+  rowDeviceId: string,
+  props: Pick<Props, "state" | "activeDeviceId" | "connectingId" | "handshakeOk" | "errorMessage">,
+): RowStatus {
+  if (props.connectingId === rowDeviceId || (props.state === "connecting" && props.activeDeviceId === rowDeviceId)) {
+    return "connecting";
+  }
+  if (props.activeDeviceId !== rowDeviceId) return "idle";
+  // From here on the row IS the active device.
+  if (props.state === "connected") {
+    // A connected-but-no-handshake state typically means the handshake just
+    // failed (use-scooter sets an error message in that case).
+    if (props.handshakeOk === false && props.errorMessage) return "handshake-failed";
+    return "connected";
+  }
+  if (props.state === "disconnected") return "disconnected";
+  if (props.state === "error") return "error";
+  return "idle";
+}
+
+const STATUS_META: Record<RowStatus, { label: string; className: string; Icon: typeof Wifi }> = {
+  idle:               { label: "saved",            className: "text-muted-foreground/70 border-border/40",      Icon: Bluetooth },
+  connecting:         { label: "connecting…",      className: "text-primary-glow border-primary-glow/40",       Icon: Loader2 },
+  connected:          { label: "connected",        className: "text-primary-glow border-primary-glow/50 bg-primary/5", Icon: Wifi },
+  "handshake-failed": { label: "handshake failed", className: "text-destructive border-destructive/40 bg-destructive/5", Icon: ShieldX },
+  disconnected:       { label: "disconnected",     className: "text-warning border-warning/40 bg-warning/5",    Icon: Link2Off },
+  error:              { label: "error",            className: "text-destructive border-destructive/40 bg-destructive/5", Icon: AlertTriangle },
+};
+
+export function PairedScooters({
+  onReconnect, busy, connectingId,
+  state, activeDeviceId, handshakeOk, errorMessage,
+}: Props) {
   const profiles = usePairedProfiles();
   const [renaming, setRenaming] = useState<PairedProfile | null>(null);
   const [renameValue, setRenameValue] = useState("");
