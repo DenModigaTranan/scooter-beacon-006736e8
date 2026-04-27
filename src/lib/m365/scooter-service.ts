@@ -41,6 +41,33 @@ export interface ScooterInfo {
   totalMileageKm: number;
 }
 
+/**
+ * Extended identifiers and stats read on demand from the device. These are
+ * NOT included in the bootstrap `readInfo()` because they are slower to
+ * collect and not needed for the connect flow — the Info screen reads them
+ * lazily when the user taps "Read extras".
+ */
+export interface ExtendedDeviceInfo {
+  /** Hex-formatted board model id, with a friendly name where known. */
+  modelId?: string;
+  /** Region / homologation code as 0xXXXX. */
+  cocVersion?: string;
+  /** ESC last-fault code as 0xXXXX (`0x0000` = no fault). */
+  errorCode?: string;
+  /** BLE module hardware revision (X.Y.Z). */
+  bleHwVersion?: string;
+  /** BMS hardware revision (X.Y.Z). */
+  bmsHwVersion?: string;
+  /** Total battery charge cycles. */
+  bmsCycles?: number;
+  /** Battery state of health, 0-100 %. */
+  bmsHealthPct?: number;
+  /** BLE peripheral address (mirrored from the `DiscoveredDevice`). */
+  bleAddress?: string;
+  /** Epoch ms when this snapshot was read. */
+  readAt: number;
+}
+
 export interface Telemetry {
   speedKph: number;
   batteryPct: number;
