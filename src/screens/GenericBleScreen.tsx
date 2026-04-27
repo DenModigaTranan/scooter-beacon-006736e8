@@ -702,7 +702,14 @@ export function GenericBleScreen() {
         attemptOutcomes={attemptOutcomes}
         onDisconnect={disconnect}
         onCancel={cancelConnect}
-        onRetry={() => connectedDevice && connect(connectedDevice)}
+        onRetry={() => {
+          if (!connectedDevice) return;
+          // Tag manual retries in the log so a sequence like
+          // attempt-fail → backoff → User retry clicked → attempt-1 is
+          // unambiguous when reading back a debug trace.
+          pushLog("info", `User retry clicked (banner) → ${connectedDevice.name || connectedDevice.deviceId.slice(0, 17)}`);
+          connect(connectedDevice);
+        }}
       />
 
       {/* One-line failure summary — only shown when the latest run ended badly.
@@ -713,7 +720,11 @@ export function GenericBleScreen() {
         data={lastFailure}
         now={now}
         canRetry={!!connectedDevice && connState !== "connecting"}
-        onRetry={() => connectedDevice && connect(connectedDevice)}
+        onRetry={() => {
+          if (!connectedDevice) return;
+          pushLog("info", `User retry clicked (failure chip) → ${connectedDevice.name || connectedDevice.deviceId.slice(0, 17)}`);
+          connect(connectedDevice);
+        }}
         retryInSec={
           connectPhase.kind === "backoff"
             ? Math.max(0, Math.ceil((connectPhase.resumeAt - now) / 1000))
