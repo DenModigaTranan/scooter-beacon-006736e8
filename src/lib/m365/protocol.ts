@@ -205,8 +205,6 @@ export function decodeVersion(word: number): string {
  * a handful of values; unknown ids fall back to a hex string so the user can
  * still identify and report the board.
  */
-import { BOARD_ID_TO_NAME } from "./models";
-
 const MODEL_NAMES: Record<number, string> = BOARD_ID_TO_NAME;
 export function decodeModelId(word: number): string {
   if (word === 0 || word === 0xffff) return "—";
