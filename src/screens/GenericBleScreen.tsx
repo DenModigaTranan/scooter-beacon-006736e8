@@ -954,6 +954,7 @@ export function GenericBleScreen() {
               disabled={connState === "connecting"}
               onConnect={() => connect(d)}
               onDisconnect={disconnect}
+              targetModelId={targetModelId}
             />
           ))}
         </div>
