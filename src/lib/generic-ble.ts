@@ -534,10 +534,16 @@ class GenericBleService {
       set.add(listener);
 
       // Push the current value immediately so the UI doesn't sit blank
-      // until the first tick lands.
-      queueMicrotask(() => listener(new Uint8Array(c.value), deviceId, key));
+      // until the first tick lands. Skipped for request/response-style
+      // notify chars (no `tick` and no `notifyIntervalMs`) — those only
+      // emit in response to writes, and an empty initial push would just
+      // confuse a stateful framer (e.g. the Ninebot session decoder).
+      const isRequestResponse = !c.tick && c.notifyIntervalMs == null;
+      if (!isRequestResponse) {
+        queueMicrotask(() => listener(new Uint8Array(c.value), deviceId, key));
+      }
 
-      if (!this.mockTimers.has(compositeKey)) {
+      if (!isRequestResponse && !this.mockTimers.has(compositeKey)) {
         const interval = c.notifyIntervalMs ?? 1500;
         const timer = setInterval(() => {
           if (this.connectedId !== deviceId) {
