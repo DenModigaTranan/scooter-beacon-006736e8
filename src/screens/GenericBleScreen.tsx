@@ -538,3 +538,281 @@ function DeviceRow({
     </motion.div>
   );
 }
+
+// ============================================================================
+// Characteristic row — interactive read / write / notify controls
+// ============================================================================
+
+/**
+ * Renders a single GATT characteristic with controls appropriate to its
+ * declared properties. Reads and writes execute against the live mock (or
+ * native plugin); notifications stream into a small ring buffer of the most
+ * recent samples so the UI exercises subscribe / unsubscribe paths.
+ */
+function CharacteristicRow({
+  deviceId, serviceUuid, char,
+}: {
+  deviceId: string;
+  serviceUuid: string;
+  char: GenericCharInfo;
+}) {
+  const canRead = char.properties.includes("read");
+  const canWrite = char.properties.includes("write") || char.properties.includes("writewithoutresponse");
+  const writeAcked = char.properties.includes("write");
+  const canNotify = char.properties.includes("notify") || char.properties.includes("indicate");
+
+  const hint = getMockHint(deviceId, serviceUuid, char.uuid) ?? "hex";
+
+  const [busy, setBusy] = useState<"read" | "write" | "subscribe" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [readValue, setReadValue] = useState<Uint8Array | null>(null);
+  const [readAt, setReadAt] = useState<number | null>(null);
+  const [writeText, setWriteText] = useState("");
+  const [writeOpen, setWriteOpen] = useState(false);
+  const [notifyOn, setNotifyOn] = useState(false);
+  const [samples, setSamples] = useState<{ value: Uint8Array; at: number }[]>([]);
+  const unsubRef = useRef<null | (() => Promise<void>)>(null);
+
+  // Auto-stop notifications when the row unmounts (e.g. on disconnect).
+  useEffect(() => () => { unsubRef.current?.().catch(() => {}); }, []);
+
+  const onRead = async () => {
+    setBusy("read");
+    setError(null);
+    try {
+      const v = await genericBle.readCharacteristic(serviceUuid, char.uuid);
+      setReadValue(v);
+      setReadAt(Date.now());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onWrite = async () => {
+    const bytes = parseWritePayload(writeText, hint);
+    if (!bytes) {
+      setError(`Invalid ${hint} payload`);
+      return;
+    }
+    setBusy("write");
+    setError(null);
+    try {
+      await genericBle.writeCharacteristic(serviceUuid, char.uuid, bytes, writeAcked);
+      setWriteOpen(false);
+      // If readable, refresh the cached value to reflect the write landed.
+      if (canRead) {
+        try {
+          const v = await genericBle.readCharacteristic(serviceUuid, char.uuid);
+          setReadValue(v);
+          setReadAt(Date.now());
+        } catch { /* ignore */ }
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onToggleNotify = async () => {
+    setError(null);
+    if (notifyOn) {
+      try { await unsubRef.current?.(); } catch { /* ignore */ }
+      unsubRef.current = null;
+      setNotifyOn(false);
+      return;
+    }
+    setBusy("subscribe");
+    try {
+      const unsub = await genericBle.startNotifications(serviceUuid, char.uuid, (v) => {
+        setSamples((prev) => {
+          const next = [...prev, { value: v, at: Date.now() }];
+          return next.length > 6 ? next.slice(next.length - 6) : next;
+        });
+      });
+      unsubRef.current = unsub;
+      setNotifyOn(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="rounded-sm bg-background/40 px-2 py-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="mono text-[10px] text-muted-foreground truncate">
+          {shortUuid(char.uuid)}
+        </span>
+        <span className="mono text-[9px] text-muted-foreground/80 tracking-widest uppercase shrink-0">
+          {char.properties.join("·") || "—"}
+        </span>
+      </div>
+
+      <div className="mt-1 flex flex-wrap items-center gap-1">
+        {canRead && (
+          <button
+            onClick={onRead}
+            disabled={busy !== null}
+            className="chip text-[9px] tracking-widest text-primary-glow hover:bg-primary/15 inline-flex items-center gap-1 disabled:opacity-50"
+          >
+            {busy === "read"
+              ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+              : <Download className="w-2.5 h-2.5" />}
+            READ
+          </button>
+        )}
+        {canWrite && (
+          <button
+            onClick={() => { setWriteOpen((o) => !o); setError(null); }}
+            disabled={busy !== null}
+            className="chip text-[9px] tracking-widest text-primary-glow hover:bg-primary/15 inline-flex items-center gap-1 disabled:opacity-50"
+          >
+            <Upload className="w-2.5 h-2.5" />
+            WRITE{writeAcked ? "" : "-NR"}
+          </button>
+        )}
+        {canNotify && (
+          <button
+            onClick={onToggleNotify}
+            disabled={busy !== null && busy !== "subscribe"}
+            className={cn(
+              "chip text-[9px] tracking-widest inline-flex items-center gap-1 disabled:opacity-50",
+              notifyOn ? "text-warning bg-warning/10" : "text-primary-glow hover:bg-primary/15",
+            )}
+          >
+            {busy === "subscribe"
+              ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+              : notifyOn
+                ? <BellOff className="w-2.5 h-2.5" />
+                : <Bell className="w-2.5 h-2.5" />}
+            {notifyOn ? "STOP" : "NOTIFY"}
+          </button>
+        )}
+      </div>
+
+      {/* Read value */}
+      {readValue && (
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <span className="mono text-[10px] text-foreground truncate" title={formatBytes(readValue, "hex")}>
+            ⇣ {formatBytes(readValue, hint)}
+          </span>
+          {readAt && (
+            <span className="mono text-[9px] text-muted-foreground/70 shrink-0">
+              {formatAge(readAt)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Inline write composer */}
+      {writeOpen && (
+        <div className="mt-1.5 space-y-1">
+          <Input
+            value={writeText}
+            onChange={(e) => setWriteText(e.target.value)}
+            placeholder={writePlaceholder(hint)}
+            className="mono text-[10px] h-7 px-2"
+            autoFocus
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="mono text-[9px] text-muted-foreground">
+              format: {hint}
+            </span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => { setWriteOpen(false); setError(null); }}
+                className="chip text-[9px] tracking-widest text-muted-foreground"
+              >CANCEL</button>
+              <button
+                onClick={onWrite}
+                disabled={busy === "write" || !writeText}
+                className="chip text-[9px] tracking-widest text-primary-glow bg-primary/15 disabled:opacity-50 inline-flex items-center gap-1"
+              >
+                {busy === "write" && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+                SEND
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live notification stream */}
+      {notifyOn && samples.length > 0 && (
+        <div className="mt-1.5 rounded-sm bg-primary/5 border border-primary/20 px-1.5 py-1">
+          <div className="mono text-[9px] text-primary-glow tracking-widest mb-0.5 inline-flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary-glow animate-pulse" />
+            LIVE · {samples.length}
+          </div>
+          <ul className="space-y-0.5">
+            {samples.slice().reverse().map((s, i) => (
+              <li key={`${s.at}-${i}`} className="flex items-center justify-between gap-2">
+                <span className="mono text-[10px] text-foreground truncate">
+                  {formatBytes(s.value, hint)}
+                </span>
+                <span className="mono text-[9px] text-muted-foreground/70 shrink-0">
+                  {formatAge(s.at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-1 mono text-[10px] text-destructive break-all">
+          ! {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatAge(ts: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 1) return "now";
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m`;
+}
+
+function writePlaceholder(hint: "utf8" | "uint8" | "uint16le" | "hex"): string {
+  switch (hint) {
+    case "utf8": return "hello";
+    case "uint8": return "0..255";
+    case "uint16le": return "0..65535";
+    default: return "hex e.g. 01 a0 ff";
+  }
+}
+
+/**
+ * Parse free-text into bytes per the format hint. Returns null on invalid
+ * input (e.g. a UTF-8 string is always valid; hex must be even-length).
+ */
+function parseWritePayload(text: string, hint: "utf8" | "uint8" | "uint16le" | "hex"): Uint8Array | null {
+  const t = text.trim();
+  if (!t) return null;
+  switch (hint) {
+    case "utf8":
+      return new TextEncoder().encode(t);
+    case "uint8": {
+      const n = Number(t);
+      if (!Number.isInteger(n) || n < 0 || n > 0xff) return null;
+      return Uint8Array.from([n]);
+    }
+    case "uint16le": {
+      const n = Number(t);
+      if (!Number.isInteger(n) || n < 0 || n > 0xffff) return null;
+      return Uint8Array.from([n & 0xff, (n >>> 8) & 0xff]);
+    }
+    case "hex": {
+      const hex = t.replace(/[^0-9a-f]/gi, "");
+      if (!hex || hex.length % 2 !== 0) return null;
+      const out = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+      return out;
+    }
+  }
+}
