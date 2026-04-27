@@ -94,6 +94,8 @@ export class ScooterService {
   private listeners = new Set<(frame: ReturnType<typeof parseFrame>) => void>();
   private mockTimer: ReturnType<typeof setInterval> | null = null;
   private mockSerial = "16133/00012345";
+  /** Latest handshake outcome. `null` until handshake() runs after a connect. */
+  private lastHandshake: HandshakeResult | null = null;
   private mockTelemetry: Telemetry = {
     speedKph: 0,
     batteryPct: 78,
