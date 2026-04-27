@@ -1084,6 +1084,45 @@ function FailureSummaryChip({
         </div>
       </div>
 
+      {/* Next-step suggestion + Retry. Lives outside the expand-toggle button
+          so the Retry button can be a real <button> sibling (nested buttons
+          are invalid HTML). The whole row only renders when there's
+          something to suggest, which is always-true once `data` exists. */}
+      {(() => {
+        const next = nextStepFor(cls.category, ended);
+        const NextIcon = next.icon;
+        // Retry only makes sense once the orchestrator has stopped its own
+        // loop; while it's still retrying, the chip would just race itself.
+        const showRetry = canRetry && ended;
+        return (
+          <div className={cn("px-2.5 pb-2.5 -mt-1 flex items-start gap-2", tone.bg)}>
+            <div className="flex-1 min-w-0 flex items-start gap-1.5 text-[11px] text-muted-foreground leading-snug">
+              <NextIcon className={cn("w-3 h-3 mt-0.5 shrink-0", tone.icon)} aria-hidden />
+              <span>
+                <span className={cn("mono text-[9px] tracking-widest uppercase mr-1", tone.header)}>
+                  Next
+                </span>
+                {next.text}
+              </span>
+            </div>
+            {showRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                title="Start a fresh connect sequence"
+                className={cn(
+                  "mono text-[9px] tracking-widest uppercase inline-flex items-center gap-1 px-2 py-1 rounded transition-colors shrink-0",
+                  "border border-current/30 hover:bg-foreground/[0.06]",
+                  tone.icon,
+                )}
+              >
+                <RefreshCw className="w-3 h-3" /> Retry now
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
       <AnimatePresence initial={false}>
         {open && expandable && (
           <motion.div
