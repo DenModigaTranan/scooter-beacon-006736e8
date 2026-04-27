@@ -152,6 +152,7 @@ export function GenericBleScreen() {
   const cancelConnect = useCallback(async () => {
     connectAbortRef.current?.abort();
     connectAbortRef.current = null;
+    connectInFlightRef.current = false;
     setConnectPhase({ kind: "idle" });
     setConnState("disconnected");
     setConnectedDevice(null);
@@ -160,7 +161,12 @@ export function GenericBleScreen() {
   }, []);
 
   const connect = useCallback(async (d: GenericDevice) => {
+    // Synchronous guard — rejects re-entry within the same tick before any
+    // React state has had a chance to flush. Combined with the disabled
+    // button this makes overlapping connects impossible.
+    if (connectInFlightRef.current) return;
     if (connState === "connecting") return;
+    connectInFlightRef.current = true;
     // Tear down any previous connect sequence and any existing connection.
     connectAbortRef.current?.abort();
     if (connState === "connected") {
