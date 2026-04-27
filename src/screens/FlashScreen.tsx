@@ -349,10 +349,20 @@ export function FlashScreen() {
           });
           return next;
         });
-        setFlashResult(e.phase === "safe" ? "aborted-safe" : "aborted-unsafe");
+        const r = e.phase === "safe" ? "aborted-safe" : "aborted-unsafe";
+        setFlashResult(r);
         setFlashError(e.message);
         if (e.phase === "safe") toast(`Flash aborted safely`);
         else toast.error(`Flash aborted mid-write — REFLASH IMMEDIATELY`);
+        if (selectedDevice) {
+          recordPairedFlash(selectedDevice.deviceId, {
+            target,
+            label: customFile?.name ?? selected?.version ?? "unknown",
+            size: bytesWritten,
+            at: Date.now(),
+            result: r,
+          });
+        }
       } else {
         appendLog(`! ERROR ${e}`);
         setPhaseStates((s) => {
@@ -365,35 +375,20 @@ export function FlashScreen() {
         setFlashResult("error");
         setFlashError(String(e));
         toast.error("Flash failed");
+        if (selectedDevice) {
+          recordPairedFlash(selectedDevice.deviceId, {
+            target,
+            label: customFile?.name ?? selected?.version ?? "unknown",
+            size: bytesWritten,
+            at: Date.now(),
+            result: "error",
+          });
+        }
       }
       setStep(5);
     } finally {
       setFlashing(false);
       abortRef.current = null;
-      // Mirror non-success outcomes onto the paired profile too, so the
-      // Connect screen can warn the user about an interrupted device.
-      if (selectedDevice) {
-        const r = (() => {
-          // re-read latest result via state setter would be racy; use ref-free
-          // closure via DOM-free approach: rely on local vars set above.
-          return null;
-        })();
-        // Fallback path: success branch already wrote; here just ensure any
-        // failure state captured in setFlashResult above is mirrored.
-        // We use a microtask to read the most recent flashResult via store.
-        queueMicrotask(() => {
-          const fr = (window as unknown as { __lastFlashResult?: string }).__lastFlashResult;
-          if (fr && fr !== "success") {
-            recordPairedFlash(selectedDevice.deviceId, {
-              target,
-              label: customFile?.name ?? selected?.version ?? "unknown",
-              size: bytesWritten,
-              at: Date.now(),
-              result: fr,
-            });
-          }
-        });
-      }
     }
   };
 
