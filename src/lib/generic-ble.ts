@@ -91,12 +91,12 @@ class GenericBleService {
     }
 
     await BleClient.requestLEScan({ allowDuplicates: false }, (res: ScanResult) => {
-      const ad = res.scanRecord?.manufacturerData ?? {};
+      const ad = res.manufacturerData ?? {};
       onDevice({
         deviceId: res.device.deviceId,
         name: res.device.name || res.localName || "(unnamed)",
         rssi: res.rssi ?? -100,
-        serviceUuids: normalizeUuids(res.scanRecord?.serviceUuids),
+        serviceUuids: normalizeUuids(res.uuids),
         manufacturerIds: Object.keys(ad).map((k) => Number(k)).filter((n) => !Number.isNaN(n)),
       });
     });
