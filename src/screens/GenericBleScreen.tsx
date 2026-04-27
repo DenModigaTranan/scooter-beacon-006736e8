@@ -730,6 +730,7 @@ export function GenericBleScreen() {
             ? Math.max(0, Math.ceil((connectPhase.resumeAt - now) / 1000))
             : null
         }
+        onCancelRetry={cancelConnect}
       />
 
       {/* Connection log — small expandable panel of timestamped events */}
