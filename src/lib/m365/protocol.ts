@@ -1,3 +1,5 @@
+import { BOARD_ID_TO_NAME } from "./models";
+
 /**
  * Xiaomi M365 family BLE protocol.
  *
