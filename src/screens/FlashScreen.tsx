@@ -21,9 +21,10 @@ type Target = "DRV" | "BMS" | "BLE";
 type Step = 1 | 2 | 3 | 4 | 5;
 
 export function FlashScreen() {
-  const { telemetry, info, appendLog, clearLog, flashLog } = useScooter();
+  const { telemetry, info, appendLog, clearLog, flashLog, rerunHandshake } = useScooter();
   const pendingFlash = useScooterStore((s) => s.pendingFlash);
   const setPendingFlash = useScooterStore((s) => s.setPendingFlash);
+  const handshake = useScooterStore((s) => s.handshake);
   const [step, setStep] = useState<Step>(1);
   const [target, setTarget] = useState<Target>("DRV");
   const [selected, setSelected] = useState<FirmwareEntry | null>(null);
@@ -35,6 +36,7 @@ export function FlashScreen() {
   const [totalBytes, setTotalBytes] = useState(0);
   const [flashing, setFlashing] = useState(false);
   const [flashResult, setFlashResult] = useState<"success" | "error" | null>(null);
+  const [retryingHandshake, setRetryingHandshake] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const catalogQ = useQuery({ queryKey: ["fw-catalog"], queryFn: ({ signal }) => fetchCatalog(signal) });
@@ -50,8 +52,14 @@ export function FlashScreen() {
     const phone = true; // simplified — could read battery via Web API on Android
     const fwOk = !!(selected || customFile);
     const confirmOk = confirmText === "CONFIRM";
-    return { battery, moving, phone, fwOk, confirmOk, all: battery && moving && phone && fwOk && confirmOk };
-  }, [telemetry, selected, customFile, confirmText]);
+    const handshakeOk = !!handshake?.ok;
+    return { battery, moving, phone, fwOk, confirmOk, handshakeOk, all: battery && moving && phone && fwOk && confirmOk && handshakeOk };
+  }, [telemetry, selected, customFile, confirmText, handshake]);
+
+  const onRetryHandshake = async () => {
+    setRetryingHandshake(true);
+    try { await rerunHandshake(); } finally { setRetryingHandshake(false); }
+  };
 
   // If the user picked a release from the Catalog screen, jump straight to
   // pre-flight checks with the right target + entry pre-selected. Then clear
