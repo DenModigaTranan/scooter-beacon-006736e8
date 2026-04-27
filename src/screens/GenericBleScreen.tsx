@@ -69,6 +69,7 @@ type LogKind =
   | "backoff"
   | "cancel"
   | "disconnect"
+  | "summary"
   | "info";
 
 interface LogEntry {
@@ -242,6 +243,36 @@ export function GenericBleScreen() {
     connectAbortRef.current = ac;
     const aborted = () => ac.signal.aborted;
 
+    // Sequence-wide counters used to render a final "summary" log entry once
+    // the orchestration terminates (success, exhaustion, or cancellation).
+    const sequenceStartedAt = Date.now();
+    let attemptsTried = 0;       // every attempt that actually started
+    let attemptsSucceeded = 0;   // exactly 0 or 1 in current design
+    let attemptsFailed = 0;      // timeouts + plugin errors + early disconnects
+    let attemptsTimedOut = 0;    // subset of attemptsFailed
+
+    /**
+     * Emit the closing summary entry. Called from every terminal branch
+     * (success, failure-after-retries, cancellation) so the log always ends
+     * with a one-line "what just happened overall" recap.
+     */
+    const emitSummary = (
+      outcome: "success" | "failed" | "cancelled",
+    ) => {
+      const total = formatMs(Date.now() - sequenceStartedAt);
+      const verb =
+        outcome === "success"   ? "Connected"
+        : outcome === "cancelled" ? "Cancelled"
+        : "Failed";
+      const counts =
+        `${attemptsSucceeded} ok · ${attemptsFailed} failed` +
+        (attemptsTimedOut ? ` (${attemptsTimedOut} timeout${attemptsTimedOut === 1 ? "" : "s"})` : "");
+      pushLog(
+        "summary",
+        `${verb} after ${total} · ${attemptsTried}/${MAX_ATTEMPTS} attempt${attemptsTried === 1 ? "" : "s"} · ${counts}`,
+      );
+    };
+
     /**
      * Race the plugin's connect() against a hard timeout. Resolves when the
      * GATT link is up; rejects with a timeout/abort/plugin error otherwise.
@@ -260,6 +291,8 @@ export function GenericBleScreen() {
 
         const timeoutId = setTimeout(() => {
           finish(() => reject(new Error(`timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`)));
+          attemptsFailed++;
+          attemptsTimedOut++;
           pushLog(
             "timeout",
             `Attempt ${attempt} hit timeout (${formatMs(elapsed())} / cap ${cap})`,
@@ -280,6 +313,7 @@ export function GenericBleScreen() {
           attempt,
           deadlineAt: startedAt + PER_ATTEMPT_TIMEOUT_MS,
         });
+        attemptsTried++;
         pushLog(
           "attempt-start",
           `Attempt ${attempt}/${MAX_ATTEMPTS} started (timeout ${cap})`,
@@ -301,6 +335,7 @@ export function GenericBleScreen() {
             const took = elapsed();
             clearTimeout(timeoutId);
             ac.signal.removeEventListener("abort", onAbort);
+            attemptsSucceeded++;
             finish(() => resolve());
             pushLog(
               "attempt-ok",
@@ -349,8 +384,12 @@ export function GenericBleScreen() {
         } catch (e) {
           lastError = e instanceof Error ? e : new Error(String(e));
           if (lastError.message === "cancelled") throw lastError;
-          // Avoid double-logging the timeout (already logged inside attemptOnce).
+          // Avoid double-counting / double-logging timeouts: the timeout
+          // path already incremented counters and logged from inside
+          // attemptOnce. Anything else (plugin error, early disconnect) is
+          // counted here as a generic failure.
           if (!lastError.message.startsWith("timed out")) {
+            attemptsFailed++;
             const tookMs = (lastError as Error & { tookMs?: number }).tookMs;
             const tail = tookMs !== undefined ? ` (took ${formatMs(tookMs)})` : "";
             pushLog("attempt-fail", `Attempt ${attempt} failed${tail}: ${lastError.message}`);
@@ -380,17 +419,23 @@ export function GenericBleScreen() {
       } finally {
         setDiscovering(false);
       }
+      // Final recap for the success branch — emitted after discovery so the
+      // total time covers the full "user clicks → ready to use" experience.
+      emitSummary("success");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setConnectPhase({ kind: "idle" });
       if (msg === "cancelled") {
-        // cancelConnect() already wrote disconnected/error message.
+        // cancelConnect() already wrote the "Cancelled by user" entry; here
+        // we add the wrap-up summary so the log still ends with totals.
+        emitSummary("cancelled");
         return;
       }
       setConnError(msg);
       setConnState("error");
       pushLog("attempt-fail", `Connect sequence failed: ${msg}`);
       try { await genericBle.disconnect(); } catch { /* ignore */ }
+      emitSummary("failed");
     } finally {
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
       connectInFlightRef.current = false;
@@ -721,6 +766,7 @@ function ConnectionLogPanel({
     "cancel":        { label: "CANCEL",   cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
     "disconnect":    { label: "DISC",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
     "info":          { label: "INFO",     cls: "text-muted-foreground",  dot: "bg-muted-foreground" },
+    "summary":       { label: "SUMMARY",  cls: "text-foreground",        dot: "bg-foreground/70" },
   };
 
   return (
