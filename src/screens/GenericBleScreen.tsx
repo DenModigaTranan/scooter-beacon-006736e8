@@ -335,6 +335,7 @@ export function GenericBleScreen() {
             const took = elapsed();
             clearTimeout(timeoutId);
             ac.signal.removeEventListener("abort", onAbort);
+            attemptsSucceeded++;
             finish(() => resolve());
             pushLog(
               "attempt-ok",
