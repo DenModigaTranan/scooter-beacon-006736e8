@@ -166,7 +166,38 @@ export class NinebotSession {
     return { ...this.telemetry };
   }
 
-  /* ----------------------------------------------------------------- */
+  /**
+   * Send a high-level control command. Translates the tagged union into a
+   * single WRITE_REG frame and dispatches it on the RX characteristic.
+   *
+   * Pre-flight: rejects unless the session is `polling` (i.e. the auth
+   * handshake has completed). This is a defence-in-depth check — the UI
+   * already disables the buttons in non-polling states, but a stray call
+   * shouldn't get past us and confuse the device with a write before it
+   * has accepted our pairing.
+   *
+   * Errors from the underlying BLE write propagate so the UI can render a
+   * one-shot toast / inline error; the session's lifecycle status is
+   * deliberately *not* moved to "error" for a single failed command,
+   * since the link itself is still healthy.
+   */
+  async sendCommand(cmd: NinebotCommand): Promise<void> {
+    if (this.status !== "polling") {
+      throw new Error(`session not ready (status=${this.status})`);
+    }
+    const frame = encodeCommand(cmd);
+    // Optimistic local update for state-bearing commands so the tile
+    // flips immediately even before the device's echo round-trips. The
+    // next poll will reconcile if the device rejected the write.
+    const optimistic = optimisticTelemetry(cmd);
+    if (optimistic) {
+      this.telemetry = { ...this.telemetry, ...optimistic };
+      this.events.onTelemetry?.(this.telemetry);
+    }
+    await genericBle.writeCharacteristic(
+      NB_GATT.SERVICE, NB_GATT.CHAR_RX, frame, false,
+    );
+  }
 
   private setStatus(next: NinebotSessionStatus, detail?: string) {
     if (this.status === next) return;
