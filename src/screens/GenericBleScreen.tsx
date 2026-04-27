@@ -54,6 +54,14 @@ type ConnectPhase =
   | { kind: "backoff"; nextAttempt: number; resumeAt: number; lastError: string };
 
 /**
+ * Per-attempt outcome tile shown in the connect progress strip. `pending` is
+ * the initial blank state, `active` is the in-flight attempt, and the rest
+ * are terminal. The strip is a fixed-length array of MAX_ATTEMPTS entries so
+ * the UI can render N tiles up front and just recolor them in place.
+ */
+type AttemptOutcome = "pending" | "active" | "ok" | "failed" | "timeout";
+
+/**
  * One entry in the user-visible connection log. We keep the structure flat
  * and tiny so the panel can render hundreds of events without churning.
  *
@@ -110,6 +118,24 @@ export function GenericBleScreen() {
   const [connectPhase, setConnectPhase] = useState<ConnectPhase>({ kind: "idle" });
   // Tick clock so the banner countdown re-renders every ~250ms while connecting.
   const [now, setNow] = useState(() => Date.now());
+  // Fixed-length progress strip rendered in the connect banner. Index i is the
+  // outcome of attempt i+1. Reset to all-"pending" at the start of every new
+  // connect sequence; mutated in place as attempts start/finish.
+  const [attemptOutcomes, setAttemptOutcomes] = useState<AttemptOutcome[]>(
+    () => Array.from({ length: MAX_ATTEMPTS }, () => "pending" as const),
+  );
+  const setAttemptOutcome = useCallback(
+    (attempt: number, outcome: AttemptOutcome) => {
+      setAttemptOutcomes((prev) => {
+        const idx = attempt - 1;
+        if (idx < 0 || idx >= prev.length || prev[idx] === outcome) return prev;
+        const next = prev.slice();
+        next[idx] = outcome;
+        return next;
+      });
+    },
+    [],
+  );
   // User-visible connection log. Newest entry first; capped at LOG_MAX_ENTRIES.
   const [log, setLog] = useState<LogEntry[]>([]);
   // Monotonic id generator for log entries — survives re-renders.
@@ -237,6 +263,10 @@ export function GenericBleScreen() {
     setConnState("connecting");
     setConnError(null);
     setServices([]);
+    // Fresh progress strip — every attempt starts as "pending" so the banner
+    // shows N empty tiles immediately on click instead of carrying over the
+    // outcomes from the previous connect run.
+    setAttemptOutcomes(Array.from({ length: MAX_ATTEMPTS }, () => "pending" as const));
     pushLog("info", `Connect requested → ${d.name || d.deviceId.slice(0, 17)}`);
 
     const ac = new AbortController();
@@ -310,6 +340,7 @@ export function GenericBleScreen() {
           attemptsFailed++;
           attemptsTimedOut++;
           attemptDurationsMs.push(elapsed());
+          setAttemptOutcome(attempt, "timeout");
           pushLog(
             "timeout",
             `Attempt ${attempt} hit timeout (${formatMs(elapsed())} / cap ${cap})`,
@@ -331,6 +362,7 @@ export function GenericBleScreen() {
           deadlineAt: startedAt + PER_ATTEMPT_TIMEOUT_MS,
         });
         attemptsTried++;
+        setAttemptOutcome(attempt, "active");
         pushLog(
           "attempt-start",
           `Attempt ${attempt}/${MAX_ATTEMPTS} started (timeout ${cap})`,
@@ -347,6 +379,10 @@ export function GenericBleScreen() {
           } else {
             const took = elapsed();
             attemptDurationsMs.push(took);
+            // Mark the strip BEFORE finishing so the early-disconnect tile
+            // turns red even though the late plugin rejection arrives after
+            // we've already settled.
+            setAttemptOutcome(attempt, "failed");
             finish(() => reject(new Error(`disconnected before GATT ready (after ${formatMs(took)})`)));
           }
         }).then(
@@ -360,6 +396,7 @@ export function GenericBleScreen() {
             if (settled) return;
             attemptsSucceeded++;
             attemptDurationsMs.push(took);
+            setAttemptOutcome(attempt, "ok");
             finish(() => resolve());
             pushLog(
               "attempt-ok",
@@ -376,7 +413,10 @@ export function GenericBleScreen() {
             (e as Error & { tookMs?: number }).tookMs = took;
             // Same guard as the success branch: timeout/abort paths already
             // recorded the duration before forcing the reject.
-            if (!settled) attemptDurationsMs.push(took);
+            if (!settled) {
+              attemptDurationsMs.push(took);
+              setAttemptOutcome(attempt, "failed");
+            }
             finish(() => reject(e));
           },
         );
@@ -467,7 +507,7 @@ export function GenericBleScreen() {
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
       connectInFlightRef.current = false;
     }
-  }, [connState, pushLog]);
+  }, [connState, pushLog, setAttemptOutcome]);
 
   const disconnect = useCallback(async () => {
     connectAbortRef.current?.abort();
@@ -546,6 +586,7 @@ export function GenericBleScreen() {
         error={connError}
         phase={connectPhase}
         now={now}
+        attemptOutcomes={attemptOutcomes}
         onDisconnect={disconnect}
         onCancel={cancelConnect}
         onRetry={() => connectedDevice && connect(connectedDevice)}
@@ -1092,14 +1133,61 @@ function ScanStateChip({ state, count }: { state: ScanState; count: number }) {
   );
 }
 
+/**
+ * Compact "attempt X of N" progress strip rendered inside the connecting
+ * banner. Each tile maps 1:1 to a configured attempt slot and recolors as
+ * the orchestrator transitions that attempt through active → ok / failed /
+ * timeout. Designed to be glanceable: no labels per tile, just color + a
+ * subtle pulse on the in-flight one. The summary text above already carries
+ * the precise "attempt N/MAX" wording for assistive tech, so this strip is
+ * purely visual reinforcement (aria-hidden).
+ */
+function AttemptProgressStrip({
+  outcomes,
+  currentAttempt,
+}: {
+  outcomes: AttemptOutcome[];
+  currentAttempt: number;
+}) {
+  if (!outcomes.length) return null;
+  return (
+    <div
+      className="mt-2 flex items-center gap-1"
+      aria-hidden="true"
+    >
+      {outcomes.map((o, i) => {
+        const attemptNum = i + 1;
+        const isCurrent = attemptNum === currentAttempt;
+        // Map outcome → tile color. Pending tiles are intentionally low
+        // contrast so the eye is drawn to the active/finished ones.
+        const cls =
+          o === "ok"      ? "bg-primary-glow"
+          : o === "failed"  ? "bg-destructive/80"
+          : o === "timeout" ? "bg-warning"
+          : o === "active"  ? "bg-primary-glow/70 animate-pulse"
+          : isCurrent       ? "bg-secondary-foreground/30"
+          :                   "bg-secondary";
+        return (
+          <div
+            key={attemptNum}
+            className={cn("h-1.5 flex-1 rounded-full transition-colors", cls)}
+            title={`Attempt ${attemptNum}: ${o}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function ConnStatusBanner({
-  connState, device, error, phase, now, onDisconnect, onCancel, onRetry,
+  connState, device, error, phase, now, attemptOutcomes, onDisconnect, onCancel, onRetry,
 }: {
   connState: ConnState;
   device: GenericDevice | null;
   error: string | null;
   phase: ConnectPhase;
   now: number;
+  attemptOutcomes: AttemptOutcome[];
   onDisconnect: () => void;
   onCancel: () => void;
   onRetry: () => void;
@@ -1169,6 +1257,11 @@ function ConnStatusBanner({
             CANCEL
           </Button>
         </div>
+        {/* Per-attempt progress strip: one tile per configured attempt slot.
+            Pending tiles read as muted, the active tile pulses, and finished
+            tiles lock in green/red so the user can see at a glance which
+            attempts already happened and how each ended. */}
+        <AttemptProgressStrip outcomes={attemptOutcomes} currentAttempt={attempt} />
         {/* Slim deadline indicator: fills as the per-attempt timeout approaches. */}
         <div className="mt-2 h-0.5 w-full rounded-full bg-secondary overflow-hidden">
           <div
