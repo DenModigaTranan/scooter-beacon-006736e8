@@ -1182,18 +1182,52 @@ function FailureSummaryChip({
               </span>
             </div>
             {showRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                title="Start a fresh connect sequence"
-                className={cn(
-                  "mono text-[9px] tracking-widest uppercase inline-flex items-center gap-1 px-2 py-1 rounded transition-colors shrink-0",
-                  "border border-current/30 hover:bg-foreground/[0.06]",
-                  tone.icon,
-                )}
-              >
-                <RefreshCw className="w-3 h-3" /> Retry now
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Persistent toggle: when checked, the Retry button arms on
+                    first click and only fires on the second. Tiny on purpose
+                    so it stays out of the way during normal use. */}
+                <label
+                  className="mono text-[9px] tracking-widest uppercase text-muted-foreground inline-flex items-center gap-1 cursor-pointer select-none"
+                  title="Require a confirm click before triggering Retry now"
+                >
+                  <input
+                    type="checkbox"
+                    checked={requireConfirm}
+                    onChange={(e) => {
+                      setRequireConfirm(e.target.checked);
+                      // Toggling off should clear any pending armed state so
+                      // the button immediately reflects the new behavior.
+                      if (!e.target.checked) {
+                        setRetryArmed(false);
+                        if (armTimerRef.current) clearTimeout(armTimerRef.current);
+                      }
+                    }}
+                    className="w-3 h-3 accent-current"
+                  />
+                  Confirm
+                </label>
+                <button
+                  type="button"
+                  onClick={handleRetryClick}
+                  title={
+                    requireConfirm
+                      ? retryArmed
+                        ? "Click again to confirm — auto-cancels in a few seconds"
+                        : "Click to arm; a second click will start a fresh connect sequence"
+                      : "Start a fresh connect sequence"
+                  }
+                  aria-pressed={retryArmed}
+                  className={cn(
+                    "mono text-[9px] tracking-widest uppercase inline-flex items-center gap-1 px-2 py-1 rounded transition-colors shrink-0",
+                    "border border-current/30 hover:bg-foreground/[0.06]",
+                    tone.icon,
+                    retryArmed && "bg-foreground/[0.08] ring-1 ring-current/40",
+                  )}
+                >
+                  <RefreshCw className={cn("w-3 h-3", retryArmed && "animate-pulse")} />
+                  {retryArmed ? "Confirm retry?" : "Retry now"}
+                </button>
+              </div>
             )}
           </div>
         );
