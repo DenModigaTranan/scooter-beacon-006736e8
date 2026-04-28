@@ -294,9 +294,15 @@ export default function NinebotScreen() {
           onSend={sendCommand}
         />
 
+        {/* Compact diagnostics — surfaces retry phase, backoff countdown,
+            and the most recent failure reason from the embedded
+            GenericBleScreen so connection problems are visible at the
+            top of the route, not buried below the scan list. */}
+        <NinebotConnectionDiagnostics diag={bleDiag} />
+
         {/* The actual scan/connect/retry surface — composed verbatim so
             every improvement to the generic flow flows through here. */}
-        <GenericBleScreen />
+        <GenericBleScreen onDiagnostics={setBleDiag} />
 
         {/* Reference panel: every model the registry recognises and what
             each one can do once connected. Read-only; the registry is
