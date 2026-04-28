@@ -257,6 +257,27 @@ export function GenericBleScreen() {
   }, [targetModelId]);
   const targetModel = targetModelId === "auto" ? null : getNinebotModelById(targetModelId);
 
+  // User-chosen "preferred" Ninebot device id. When multiple Ninebot
+  // peripherals are detected, this records which one the user wants the
+  // telemetry decoder to attach to. Only one Ninebot can be actively
+  // decoded at a time (the BLE singleton allows a single connection), so
+  // selecting a device here also triggers a connect to that peripheral —
+  // replacing any existing connection. Persisted across reloads so the
+  // user's choice survives a refresh in a multi-scooter environment.
+  const PREFERRED_NB_KEY = "ble.preferredNinebotId";
+  const [preferredNinebotId, setPreferredNinebotId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(PREFERRED_NB_KEY) || null;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (preferredNinebotId) {
+      window.localStorage.setItem(PREFERRED_NB_KEY, preferredNinebotId);
+    } else {
+      window.localStorage.removeItem(PREFERRED_NB_KEY);
+    }
+  }, [preferredNinebotId]);
+
   const [connState, setConnState] = useState<ConnState>("disconnected");
   const [connError, setConnError] = useState<string | null>(null);
   const [connectedDevice, setConnectedDevice] = useState<GenericDevice | null>(null);
@@ -1015,6 +1036,20 @@ export function GenericBleScreen() {
               onConnect={() => connect(d)}
               onDisconnect={disconnect}
               targetModelId={targetModelId}
+              preferredNinebotId={preferredNinebotId}
+              onUseThisNinebot={() => {
+                setPreferredNinebotId(d.deviceId);
+                // Pin-and-connect: selecting a Ninebot here means "decode
+                // this one", which requires the singleton's active link to
+                // point at it. connect() handles tearing down any prior
+                // connection internally.
+                if (
+                  !(connState === "connected" && connectedDevice?.deviceId === d.deviceId) &&
+                  connState !== "connecting"
+                ) {
+                  connect(d);
+                }
+              }}
             />
           ))}
         </div>
@@ -1957,6 +1992,7 @@ function ConnStatusBanner({
 
 function DeviceRow({
   device, isConnected, isConnecting, disabled, onConnect, onDisconnect, targetModelId,
+  preferredNinebotId, onUseThisNinebot,
 }: {
   device: GenericDevice;
   isConnected: boolean;
@@ -1970,6 +2006,13 @@ function DeviceRow({
   // accidental connects when troubleshooting a specific scooter in a
   // multi-device environment.
   targetModelId: string;
+  // The user-pinned "active Ninebot" device id (the one the telemetry
+  // decoder will follow). When this row's deviceId matches, we badge it
+  // ACTIVE; otherwise we offer a "Use this Ninebot" action on Ninebot-
+  // detected rows so the user can switch which scooter is being decoded
+  // when several are nearby.
+  preferredNinebotId: string | null;
+  onUseThisNinebot: () => void;
 }) {
   const bars = rssiBars(device.rssi);
   // Cheap, pure heuristic — runs once per render. Used to surface a
@@ -2059,6 +2102,19 @@ function DeviceRow({
             {device.mock && (
               <span className="chip text-[8px] tracking-widest text-warning">MOCK</span>
             )}
+            {/* "Active" badge — this is the Ninebot the telemetry decoder
+                is currently set to follow. Only meaningful for Ninebot-
+                detected rows; we surface it on any row whose deviceId
+                matches the user's pinned preference so a quick glance at
+                the scan list shows which scooter "wins" right now. */}
+            {ninebot && preferredNinebotId === device.deviceId && (
+              <span
+                className="chip text-[8px] tracking-widest text-primary-glow border border-primary-glow/40"
+                title="Telemetry decoder is set to follow this Ninebot."
+              >
+                ACTIVE NINEBOT
+              </span>
+            )}
             {targetMismatch && (
               <span
                 className="chip text-[8px] tracking-widest text-warning border border-warning/40"
@@ -2102,7 +2158,28 @@ function DeviceRow({
         </div>
       )}
 
-      <div className="mt-3 flex justify-end">
+      <div className="mt-3 flex justify-end gap-2 flex-wrap">
+        {/* "Use this Ninebot" — surfaces only on Ninebot-detected rows
+            that aren't already pinned as the preferred device. Pins the
+            choice and (re)connects so the telemetry decoder follows this
+            scooter. Hidden on the connected row when it's already pinned
+            (no-op) and on non-Ninebot rows (irrelevant). */}
+        {ninebot && preferredNinebotId !== device.deviceId && (
+          <Button
+            onClick={onUseThisNinebot}
+            disabled={disabled || isConnecting || targetMismatch}
+            size="sm"
+            variant="outline"
+            title={
+              targetMismatch
+                ? `Detected ${ninebotModel?.model.displayName ?? "non-matching device"} — adjust the Target model dropdown to switch the active Ninebot.`
+                : "Pin this device as the active Ninebot for telemetry decoding (will connect to it)."
+            }
+            className="mono text-[10px] tracking-widest border-primary-glow/40 text-primary-glow hover:bg-primary-glow/10"
+          >
+            <Zap className="w-3 h-3 mr-1" /> USE THIS NINEBOT
+          </Button>
+        )}
         {isConnected ? (
           <Button
             onClick={onDisconnect}
