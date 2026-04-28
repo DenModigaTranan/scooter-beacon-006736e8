@@ -38,7 +38,7 @@ import { detectNinebot } from "@/lib/ninebot-detect";
 import { matchNinebotModel, NINEBOT_MODELS, getNinebotModelById } from "@/lib/ninebot-models";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
-type ConnState = "disconnected" | "connecting" | "connected" | "error";
+export type ConnState = "disconnected" | "connecting" | "connected" | "error";
 
 const SCAN_DURATION_MS = 6000;
 
@@ -55,7 +55,7 @@ const MAX_ATTEMPTS = 3;
 const BACKOFFS_MS = [500, 1500] as const; // delays between attempts 1→2, 2→3
 
 /** Phase within a single connect sequence — drives banner UI. */
-type ConnectPhase =
+export type ConnectPhase =
   | { kind: "idle" }
   | { kind: "connecting"; attempt: number; deadlineAt: number }
   | { kind: "backoff"; nextAttempt: number; resumeAt: number; lastError: string };
@@ -85,7 +85,7 @@ function describeRetryContext(phase: ConnectPhase, connState: ConnState): string
  * are terminal. The strip is a fixed-length array of MAX_ATTEMPTS entries so
  * the UI can render N tiles up front and just recolor them in place.
  */
-type AttemptOutcome = "pending" | "active" | "ok" | "failed" | "timeout";
+export type AttemptOutcome = "pending" | "active" | "ok" | "failed" | "timeout";
 
 /**
  * One entry in the user-visible connection log. We keep the structure flat
@@ -235,7 +235,55 @@ function shortUuid(uuid: string): string {
   return m ? `0x${m[1].toUpperCase()}` : uuid.toUpperCase();
 }
 
-export function GenericBleScreen() {
+/**
+ * Compact, read-only snapshot of the connect orchestrator's current state.
+ * Emitted via the optional `onDiagnostics` prop so a parent route (e.g.
+ * NinebotScreen) can mirror the same retry/backoff/error context that the
+ * screen already shows in its banner — without duplicating the orchestration
+ * logic. Every field is cheap to render and stable in shape; consumers can
+ * memo against `phase.kind`/`lastError?.message` etc.
+ */
+export interface GenericBleDiagnostics {
+  /** Current top-level connection state. */
+  connState: ConnState;
+  /** Where the orchestrator is in the per-attempt timeline. */
+  phase: ConnectPhase;
+  /** Most recent connect error message (raw, as surfaced in the banner). */
+  connError: string | null;
+  /** Per-attempt outcome strip (length === MAX_ATTEMPTS). */
+  attemptOutcomes: readonly AttemptOutcome[];
+  /**
+   * The most recent failure summary, if the latest run ended badly.
+   * Shape mirrors the `FailureSummaryChip` data — `null` when the latest
+   * run is still in flight or ended successfully.
+   */
+  lastFailure: {
+    /** 1-based attempt number that failed, when parseable. */
+    attempt: number | null;
+    /** Cleaned reason text (timeout / disconnect / auth / generic). */
+    reason: string;
+    /** True when the failure came from the per-attempt timeout guard. */
+    isTimeout: boolean;
+    /** Wall-clock time (ms since epoch) the failing attempt logged out. */
+    at: number;
+    /** Total run duration label, when the orchestrator already summarised. */
+    totalLabel: string | null;
+  } | null;
+  /** The currently-targeted device, when any. Null between sessions. */
+  device: { deviceId: string; name?: string } | null;
+}
+
+interface GenericBleScreenProps {
+  /**
+   * Fires whenever the diagnostics snapshot changes. Optional — the screen
+   * works identically with or without it. The callback receives a freshly
+   * built object on each change (no internal references leak), so consumers
+   * can safely store it in state.
+   */
+  onDiagnostics?: (snap: GenericBleDiagnostics) => void;
+}
+
+export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) {
   const [scanState, setScanState] = useState<ScanState>("idle");
   const [scanError, setScanError] = useState<string | null>(null);
   const [devices, setDevices] = useState<GenericDevice[]>([]);
@@ -793,6 +841,37 @@ export function GenericBleScreen() {
       : null;
     return { entry: lastFail, attempt, reason, isTimeout, totalLabel, ended: !!lastSummary, failures: runFailures };
   }, [log]);
+
+  // Mirror the orchestrator's user-visible state to the optional
+  // `onDiagnostics` callback so a parent route (NinebotScreen) can render
+  // its own retry/backoff/error surface without re-implementing the
+  // orchestration. We rebuild a fresh snapshot on every relevant change so
+  // the consumer can stash it in state directly. Cheap — these are all
+  // primitives + small structs.
+  useEffect(() => {
+    if (!onDiagnostics) return;
+    onDiagnostics({
+      connState,
+      phase: connectPhase,
+      connError,
+      attemptOutcomes,
+      lastFailure: lastFailure
+        ? {
+            attempt: lastFailure.attempt,
+            reason: lastFailure.reason,
+            isTimeout: lastFailure.isTimeout,
+            at: lastFailure.entry.at,
+            totalLabel: lastFailure.totalLabel,
+          }
+        : null,
+      device: connectedDevice
+        ? { deviceId: connectedDevice.deviceId, name: connectedDevice.name }
+        : null,
+    });
+  }, [
+    onDiagnostics, connState, connectPhase, connError,
+    attemptOutcomes, lastFailure, connectedDevice,
+  ]);
 
   return (
     <div className="px-4 pt-4 pb-28 max-w-md mx-auto space-y-4 animate-fade-in">

@@ -14,9 +14,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Battery, Gauge, Lock, Route as RouteIcon, Zap, Info, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
-import { GenericBleScreen } from "@/screens/GenericBleScreen";
+import { GenericBleScreen, type GenericBleDiagnostics } from "@/screens/GenericBleScreen";
 import { NinebotSupportedModels } from "@/components/NinebotSupportedModels";
 import { NinebotControlsPanel } from "@/components/NinebotControlsPanel";
+import { NinebotConnectionDiagnostics } from "@/components/NinebotConnectionDiagnostics";
 import { genericBle } from "@/lib/generic-ble";
 import { NB_GATT, formatTelemetryField, type NinebotTelemetry } from "@/lib/ninebot/protocol";
 import { NinebotSession, type NinebotCommand, type NinebotSessionStatus } from "@/lib/ninebot/session";
@@ -200,6 +201,11 @@ function statusBadge(status: NinebotSessionStatus, hasNinebot: boolean):
 export default function NinebotScreen() {
   const { telemetry, status, detail, hasNinebot, model, sendCommand } = useNinebotLiveTelemetry();
   const badge = useMemo(() => statusBadge(status, hasNinebot), [status, hasNinebot]);
+  // Mirror the embedded GenericBleScreen's connect orchestrator state so
+  // the diagnostics card above can show retry/backoff/error context
+  // without the user having to scroll into the scan panel below. The
+  // screen itself owns the orchestration; we're just listening.
+  const [bleDiag, setBleDiag] = useState<GenericBleDiagnostics | null>(null);
 
   return (
     <div className="min-h-screen pb-6">
@@ -288,9 +294,15 @@ export default function NinebotScreen() {
           onSend={sendCommand}
         />
 
+        {/* Compact diagnostics — surfaces retry phase, backoff countdown,
+            and the most recent failure reason from the embedded
+            GenericBleScreen so connection problems are visible at the
+            top of the route, not buried below the scan list. */}
+        <NinebotConnectionDiagnostics diag={bleDiag} />
+
         {/* The actual scan/connect/retry surface — composed verbatim so
             every improvement to the generic flow flows through here. */}
-        <GenericBleScreen />
+        <GenericBleScreen onDiagnostics={setBleDiag} />
 
         {/* Reference panel: every model the registry recognises and what
             each one can do once connected. Read-only; the registry is
