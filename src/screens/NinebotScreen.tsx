@@ -14,9 +14,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Battery, Gauge, Lock, Route as RouteIcon, Zap, Info, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
-import { GenericBleScreen } from "@/screens/GenericBleScreen";
+import { GenericBleScreen, type GenericBleDiagnostics } from "@/screens/GenericBleScreen";
 import { NinebotSupportedModels } from "@/components/NinebotSupportedModels";
 import { NinebotControlsPanel } from "@/components/NinebotControlsPanel";
+import { NinebotConnectionDiagnostics } from "@/components/NinebotConnectionDiagnostics";
 import { genericBle } from "@/lib/generic-ble";
 import { NB_GATT, formatTelemetryField, type NinebotTelemetry } from "@/lib/ninebot/protocol";
 import { NinebotSession, type NinebotCommand, type NinebotSessionStatus } from "@/lib/ninebot/session";
