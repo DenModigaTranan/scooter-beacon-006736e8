@@ -486,6 +486,28 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
     setAttemptOutcomes(Array.from({ length: MAX_ATTEMPTS }, () => "pending" as const));
     pushLog("info", `Connect requested → ${d.name || d.deviceId.slice(0, 17)}`);
 
+    // Auto-pin the Target model dropdown to the detected model when the
+    // user hasn't already pinned a specific one. Rationale: clicking a
+    // device in the scan list is an explicit "I want this scooter" signal,
+    // so it's helpful to lock subsequent capability gating to the model we
+    // just identified — without overriding an existing manual choice. We
+    // skip the "fallback" match (no real identification) and skip when the
+    // detection didn't even fire (non-Ninebot device).
+    if (targetModelId === "auto") {
+      const m = matchNinebotModel({
+        name: d.name,
+        serviceUuids: d.serviceUuids,
+        manufacturerIds: d.manufacturerIds,
+      });
+      if (m.via !== "fallback") {
+        setTargetModelId(m.model.id);
+        pushLog(
+          "info",
+          `Target model auto-set → ${m.model.displayName} (via ${m.via}${m.evidence ? ` "${m.evidence}"` : ""})`,
+        );
+      }
+    }
+
     const ac = new AbortController();
     connectAbortRef.current = ac;
     const aborted = () => ac.signal.aborted;
@@ -724,7 +746,7 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
       connectInFlightRef.current = false;
     }
-  }, [connState, pushLog, setAttemptOutcome]);
+  }, [connState, pushLog, setAttemptOutcome, targetModelId]);
 
   const disconnect = useCallback(async () => {
     connectAbortRef.current?.abort();
