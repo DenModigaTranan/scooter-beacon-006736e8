@@ -2158,7 +2158,28 @@ function DeviceRow({
         </div>
       )}
 
-      <div className="mt-3 flex justify-end">
+      <div className="mt-3 flex justify-end gap-2 flex-wrap">
+        {/* "Use this Ninebot" — surfaces only on Ninebot-detected rows
+            that aren't already pinned as the preferred device. Pins the
+            choice and (re)connects so the telemetry decoder follows this
+            scooter. Hidden on the connected row when it's already pinned
+            (no-op) and on non-Ninebot rows (irrelevant). */}
+        {ninebot && preferredNinebotId !== device.deviceId && (
+          <Button
+            onClick={onUseThisNinebot}
+            disabled={disabled || isConnecting || targetMismatch}
+            size="sm"
+            variant="outline"
+            title={
+              targetMismatch
+                ? `Detected ${ninebotModel?.model.displayName ?? "non-matching device"} — adjust the Target model dropdown to switch the active Ninebot.`
+                : "Pin this device as the active Ninebot for telemetry decoding (will connect to it)."
+            }
+            className="mono text-[10px] tracking-widest border-primary-glow/40 text-primary-glow hover:bg-primary-glow/10"
+          >
+            <Zap className="w-3 h-3 mr-1" /> USE THIS NINEBOT
+          </Button>
+        )}
         {isConnected ? (
           <Button
             onClick={onDisconnect}
