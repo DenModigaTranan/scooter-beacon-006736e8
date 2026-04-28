@@ -257,6 +257,27 @@ export function GenericBleScreen() {
   }, [targetModelId]);
   const targetModel = targetModelId === "auto" ? null : getNinebotModelById(targetModelId);
 
+  // User-chosen "preferred" Ninebot device id. When multiple Ninebot
+  // peripherals are detected, this records which one the user wants the
+  // telemetry decoder to attach to. Only one Ninebot can be actively
+  // decoded at a time (the BLE singleton allows a single connection), so
+  // selecting a device here also triggers a connect to that peripheral —
+  // replacing any existing connection. Persisted across reloads so the
+  // user's choice survives a refresh in a multi-scooter environment.
+  const PREFERRED_NB_KEY = "ble.preferredNinebotId";
+  const [preferredNinebotId, setPreferredNinebotId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(PREFERRED_NB_KEY) || null;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (preferredNinebotId) {
+      window.localStorage.setItem(PREFERRED_NB_KEY, preferredNinebotId);
+    } else {
+      window.localStorage.removeItem(PREFERRED_NB_KEY);
+    }
+  }, [preferredNinebotId]);
+
   const [connState, setConnState] = useState<ConnState>("disconnected");
   const [connError, setConnError] = useState<string | null>(null);
   const [connectedDevice, setConnectedDevice] = useState<GenericDevice | null>(null);
