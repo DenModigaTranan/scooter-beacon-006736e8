@@ -842,6 +842,37 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
     return { entry: lastFail, attempt, reason, isTimeout, totalLabel, ended: !!lastSummary, failures: runFailures };
   }, [log]);
 
+  // Mirror the orchestrator's user-visible state to the optional
+  // `onDiagnostics` callback so a parent route (NinebotScreen) can render
+  // its own retry/backoff/error surface without re-implementing the
+  // orchestration. We rebuild a fresh snapshot on every relevant change so
+  // the consumer can stash it in state directly. Cheap — these are all
+  // primitives + small structs.
+  useEffect(() => {
+    if (!onDiagnostics) return;
+    onDiagnostics({
+      connState,
+      phase: connectPhase,
+      connError,
+      attemptOutcomes,
+      lastFailure: lastFailure
+        ? {
+            attempt: lastFailure.attempt,
+            reason: lastFailure.reason,
+            isTimeout: lastFailure.isTimeout,
+            at: lastFailure.entry.at,
+            totalLabel: lastFailure.totalLabel,
+          }
+        : null,
+      device: connectedDevice
+        ? { deviceId: connectedDevice.deviceId, name: connectedDevice.name }
+        : null,
+    });
+  }, [
+    onDiagnostics, connState, connectPhase, connError,
+    attemptOutcomes, lastFailure, connectedDevice,
+  ]);
+
   return (
     <div className="px-4 pt-4 pb-28 max-w-md mx-auto space-y-4 animate-fade-in">
       {/* Connection status banner */}
