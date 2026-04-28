@@ -1036,6 +1036,20 @@ export function GenericBleScreen() {
               onConnect={() => connect(d)}
               onDisconnect={disconnect}
               targetModelId={targetModelId}
+              preferredNinebotId={preferredNinebotId}
+              onUseThisNinebot={() => {
+                setPreferredNinebotId(d.deviceId);
+                // Pin-and-connect: selecting a Ninebot here means "decode
+                // this one", which requires the singleton's active link to
+                // point at it. connect() handles tearing down any prior
+                // connection internally.
+                if (
+                  !(connState === "connected" && connectedDevice?.deviceId === d.deviceId) &&
+                  connState !== "connecting"
+                ) {
+                  connect(d);
+                }
+              }}
             />
           ))}
         </div>
