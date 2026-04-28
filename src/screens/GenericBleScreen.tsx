@@ -235,7 +235,55 @@ function shortUuid(uuid: string): string {
   return m ? `0x${m[1].toUpperCase()}` : uuid.toUpperCase();
 }
 
-export function GenericBleScreen() {
+/**
+ * Compact, read-only snapshot of the connect orchestrator's current state.
+ * Emitted via the optional `onDiagnostics` prop so a parent route (e.g.
+ * NinebotScreen) can mirror the same retry/backoff/error context that the
+ * screen already shows in its banner — without duplicating the orchestration
+ * logic. Every field is cheap to render and stable in shape; consumers can
+ * memo against `phase.kind`/`lastError?.message` etc.
+ */
+export interface GenericBleDiagnostics {
+  /** Current top-level connection state. */
+  connState: ConnState;
+  /** Where the orchestrator is in the per-attempt timeline. */
+  phase: ConnectPhase;
+  /** Most recent connect error message (raw, as surfaced in the banner). */
+  connError: string | null;
+  /** Per-attempt outcome strip (length === MAX_ATTEMPTS). */
+  attemptOutcomes: readonly AttemptOutcome[];
+  /**
+   * The most recent failure summary, if the latest run ended badly.
+   * Shape mirrors the `FailureSummaryChip` data — `null` when the latest
+   * run is still in flight or ended successfully.
+   */
+  lastFailure: {
+    /** 1-based attempt number that failed, when parseable. */
+    attempt: number | null;
+    /** Cleaned reason text (timeout / disconnect / auth / generic). */
+    reason: string;
+    /** True when the failure came from the per-attempt timeout guard. */
+    isTimeout: boolean;
+    /** Wall-clock time (ms since epoch) the failing attempt logged out. */
+    at: number;
+    /** Total run duration label, when the orchestrator already summarised. */
+    totalLabel: string | null;
+  } | null;
+  /** The currently-targeted device, when any. Null between sessions. */
+  device: { deviceId: string; name?: string } | null;
+}
+
+interface GenericBleScreenProps {
+  /**
+   * Fires whenever the diagnostics snapshot changes. Optional — the screen
+   * works identically with or without it. The callback receives a freshly
+   * built object on each change (no internal references leak), so consumers
+   * can safely store it in state.
+   */
+  onDiagnostics?: (snap: GenericBleDiagnostics) => void;
+}
+
+export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) {
   const [scanState, setScanState] = useState<ScanState>("idle");
   const [scanError, setScanError] = useState<string | null>(null);
   const [devices, setDevices] = useState<GenericDevice[]>([]);
