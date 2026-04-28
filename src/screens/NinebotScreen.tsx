@@ -201,6 +201,11 @@ function statusBadge(status: NinebotSessionStatus, hasNinebot: boolean):
 export default function NinebotScreen() {
   const { telemetry, status, detail, hasNinebot, model, sendCommand } = useNinebotLiveTelemetry();
   const badge = useMemo(() => statusBadge(status, hasNinebot), [status, hasNinebot]);
+  // Mirror the embedded GenericBleScreen's connect orchestrator state so
+  // the diagnostics card above can show retry/backoff/error context
+  // without the user having to scroll into the scan panel below. The
+  // screen itself owns the orchestration; we're just listening.
+  const [bleDiag, setBleDiag] = useState<GenericBleDiagnostics | null>(null);
 
   return (
     <div className="min-h-screen pb-6">
