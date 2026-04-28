@@ -1992,6 +1992,7 @@ function ConnStatusBanner({
 
 function DeviceRow({
   device, isConnected, isConnecting, disabled, onConnect, onDisconnect, targetModelId,
+  preferredNinebotId, onUseThisNinebot,
 }: {
   device: GenericDevice;
   isConnected: boolean;
@@ -2005,6 +2006,13 @@ function DeviceRow({
   // accidental connects when troubleshooting a specific scooter in a
   // multi-device environment.
   targetModelId: string;
+  // The user-pinned "active Ninebot" device id (the one the telemetry
+  // decoder will follow). When this row's deviceId matches, we badge it
+  // ACTIVE; otherwise we offer a "Use this Ninebot" action on Ninebot-
+  // detected rows so the user can switch which scooter is being decoded
+  // when several are nearby.
+  preferredNinebotId: string | null;
+  onUseThisNinebot: () => void;
 }) {
   const bars = rssiBars(device.rssi);
   // Cheap, pure heuristic — runs once per render. Used to surface a
