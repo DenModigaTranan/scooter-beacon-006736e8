@@ -2102,6 +2102,19 @@ function DeviceRow({
             {device.mock && (
               <span className="chip text-[8px] tracking-widest text-warning">MOCK</span>
             )}
+            {/* "Active" badge — this is the Ninebot the telemetry decoder
+                is currently set to follow. Only meaningful for Ninebot-
+                detected rows; we surface it on any row whose deviceId
+                matches the user's pinned preference so a quick glance at
+                the scan list shows which scooter "wins" right now. */}
+            {ninebot && preferredNinebotId === device.deviceId && (
+              <span
+                className="chip text-[8px] tracking-widest text-primary-glow border border-primary-glow/40"
+                title="Telemetry decoder is set to follow this Ninebot."
+              >
+                ACTIVE NINEBOT
+              </span>
+            )}
             {targetMismatch && (
               <span
                 className="chip text-[8px] tracking-widest text-warning border border-warning/40"
