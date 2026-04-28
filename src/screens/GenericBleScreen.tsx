@@ -85,7 +85,7 @@ function describeRetryContext(phase: ConnectPhase, connState: ConnState): string
  * are terminal. The strip is a fixed-length array of MAX_ATTEMPTS entries so
  * the UI can render N tiles up front and just recolor them in place.
  */
-type AttemptOutcome = "pending" | "active" | "ok" | "failed" | "timeout";
+export type AttemptOutcome = "pending" | "active" | "ok" | "failed" | "timeout";
 
 /**
  * One entry in the user-visible connection log. We keep the structure flat
