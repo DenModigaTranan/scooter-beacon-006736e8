@@ -38,7 +38,7 @@ import { detectNinebot } from "@/lib/ninebot-detect";
 import { matchNinebotModel, NINEBOT_MODELS, getNinebotModelById } from "@/lib/ninebot-models";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
-type ConnState = "disconnected" | "connecting" | "connected" | "error";
+export type ConnState = "disconnected" | "connecting" | "connected" | "error";
 
 const SCAN_DURATION_MS = 6000;
 
