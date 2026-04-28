@@ -55,7 +55,7 @@ const MAX_ATTEMPTS = 3;
 const BACKOFFS_MS = [500, 1500] as const; // delays between attempts 1→2, 2→3
 
 /** Phase within a single connect sequence — drives banner UI. */
-type ConnectPhase =
+export type ConnectPhase =
   | { kind: "idle" }
   | { kind: "connecting"; attempt: number; deadlineAt: number }
   | { kind: "backoff"; nextAttempt: number; resumeAt: number; lastError: string };
