@@ -2198,9 +2198,13 @@ function DeviceRow({
   // disabled for them. We treat the fallback ("ninebot-unknown") as
   // *non-matching* on purpose — pinning a model is an explicit assertion
   // and we shouldn't connect when we can't even confidently identify the
-  // device family.
+  // device family. A per-device override (if any) supersedes auto-detect
+  // for the purpose of mismatch checks — that's the whole point of pinning.
   const isTargetPinned = targetModelId !== "auto";
-  const detectedModelId = ninebotModel?.via !== "fallback" ? ninebotModel?.model.id : null;
+  const overrideModel = modelOverrideId ? getNinebotModelById(modelOverrideId) : null;
+  const detectedModelId = overrideModel
+    ? overrideModel.id
+    : ninebotModel?.via !== "fallback" ? ninebotModel?.model.id : null;
   const targetMismatch = isTargetPinned && detectedModelId !== targetModelId;
   return (
     <motion.div
