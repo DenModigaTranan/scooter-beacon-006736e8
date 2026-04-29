@@ -774,7 +774,7 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
       connectInFlightRef.current = false;
     }
-  }, [connState, pushLog, setAttemptOutcome, targetModelId]);
+  }, [connState, pushLog, setAttemptOutcome, targetModelId, deviceOverrides]);
 
   const disconnect = useCallback(async () => {
     connectAbortRef.current?.abort();
