@@ -45,8 +45,18 @@ const COMPANY_ID_SEGWAY = 0x0810;
 const COMPANY_ID_XIAOMI = 0x038f;
 
 // Case-insensitive prefix match. Order matters only for cosmetic logging;
-// any hit is treated equally.
-const NINEBOT_NAME_PREFIXES = ["ninebot", "nb", "miscooter", "misc"] as const;
+// any hit is treated equally. Covers:
+//   - Segway-Ninebot lineup: "ninebot…", "nb…", "segway…"
+//   - Xiaomi-branded units (M365 / Pro / 1S / Essential / Mi3 / Mi4):
+//     "miscooter…", "misc…", "mipro…", "miessential…", "mi1s…", "mi3…", "mi4…"
+//   - Misc Ninebot family aliases: "mimax…" (Max under Mi Home), "yyx…"
+//     (engine speaker CN SKU), "lumina…" / "xafari…" / "muxi…" / "myon…" /
+//     "xyber…" (Segway-branded e-bikes, power stations).
+const NINEBOT_NAME_PREFIXES = [
+  "ninebot", "nb", "segway",
+  "miscooter", "misc", "mipro", "miessential", "mi1s", "mi3", "mi4", "mimax",
+  "lumina", "xafari", "muxi", "myon", "xyber", "yyx",
+] as const;
 
 /**
  * The custom Ninebot service uses a 128-bit UUID whose final 6 bytes are
