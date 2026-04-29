@@ -58,6 +58,7 @@ const CATEGORY_DISPLAY: Record<NinebotCategory, { label: string; order: number }
   "e-bike":         { label: "E-bikes",         order: 6 },
   "speaker":        { label: "Speakers",        order: 7 },
   "power-station":  { label: "Power stations",  order: 8 },
+  "armor-kit":      { label: "Armor kits",      order: 9 },
 };
 
 /**
