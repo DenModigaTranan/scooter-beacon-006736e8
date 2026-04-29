@@ -2139,6 +2139,7 @@ function ConnStatusBanner({
 function DeviceRow({
   device, isConnected, isConnecting, disabled, onConnect, onDisconnect, targetModelId,
   preferredNinebotId, onUseThisNinebot,
+  modelOverrideId, onSetModelOverride,
 }: {
   device: GenericDevice;
   isConnected: boolean;
@@ -2159,6 +2160,12 @@ function DeviceRow({
   // when several are nearby.
   preferredNinebotId: string | null;
   onUseThisNinebot: () => void;
+  // Per-device model override (pinned by deviceId / MAC). When set, this
+  // model wins over both the toolbar Target pin and registry detection
+  // for this specific device — the safe escape hatch when auto-detect
+  // mis-identifies one scooter in a multi-device fleet.
+  modelOverrideId: string | null;
+  onSetModelOverride: (modelId: string | null) => void;
 }) {
   const bars = rssiBars(device.rssi);
   // Cheap, pure heuristic — runs once per render. Used to surface a
