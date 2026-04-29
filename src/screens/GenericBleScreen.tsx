@@ -2280,6 +2280,18 @@ function DeviceRow({
                 MISMATCH
               </span>
             )}
+            {/* Per-device override chip — surfaces whenever the user has
+                pinned a model for this specific device (by MAC). Visible
+                on every row regardless of detection so it's obvious which
+                devices have a manual override applied. */}
+            {overrideModel && (
+              <span
+                className="chip text-[8px] tracking-widest text-primary border border-primary/40"
+                title={`Per-device override pinned to ${overrideModel.displayName}. Wins over auto-detection for this MAC.`}
+              >
+                PINNED · {overrideModel.shortLabel.toUpperCase()}
+              </span>
+            )}
           </div>
           <div className="mono text-[10px] text-muted-foreground tracking-widest truncate">
             {device.deviceId.slice(0, 17).toUpperCase()} · {device.rssi} dBm
