@@ -331,6 +331,13 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
     }
   }, [preferredNinebotId]);
 
+  // Per-device model overrides — keyed by lowercased device id. When a
+  // device has an override, it wins over both the toolbar "Target model"
+  // pin and the registry's auto-detection. Lets the user permanently
+  // correct mis-identification for one specific scooter (e.g. by MAC)
+  // without affecting the rest of the scan list.
+  const deviceOverrides = useDeviceModelOverrides();
+
   const [connState, setConnState] = useState<ConnState>("disconnected");
   const [connError, setConnError] = useState<string | null>(null);
   const [connectedDevice, setConnectedDevice] = useState<GenericDevice | null>(null);
