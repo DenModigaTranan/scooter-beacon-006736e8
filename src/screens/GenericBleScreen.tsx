@@ -498,25 +498,41 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
     setAttemptOutcomes(Array.from({ length: MAX_ATTEMPTS }, () => "pending" as const));
     pushLog("info", `Connect requested → ${d.name || d.deviceId.slice(0, 17)}`);
 
+    // Resolve the model to log/pin for this connect: a per-device override
+    // (pinned by MAC) wins over auto-detection, since it's an explicit
+    // user assertion. Otherwise fall back to the registry's heuristic
+    // match. Either way we only mutate the toolbar `targetModelId` when
+    // the user hasn't already pinned a specific one (see rationale below).
+    const overrideId = deviceOverrides[d.deviceId.toLowerCase()] ?? null;
+    const overrideModel = overrideId ? getNinebotModelById(overrideId) : null;
+    if (overrideModel) {
+      pushLog("info", `Per-device model override active → ${overrideModel.displayName}`);
+    }
+
     // Auto-pin the Target model dropdown to the detected model when the
     // user hasn't already pinned a specific one. Rationale: clicking a
     // device in the scan list is an explicit "I want this scooter" signal,
     // so it's helpful to lock subsequent capability gating to the model we
-    // just identified — without overriding an existing manual choice. We
-    // skip the "fallback" match (no real identification) and skip when the
-    // detection didn't even fire (non-Ninebot device).
+    // just identified — without overriding an existing manual choice. The
+    // per-device override (if any) takes precedence over heuristic
+    // detection here too.
     if (targetModelId === "auto") {
-      const m = matchNinebotModel({
-        name: d.name,
-        serviceUuids: d.serviceUuids,
-        manufacturerIds: d.manufacturerIds,
-      });
-      if (m.via !== "fallback") {
-        setTargetModelId(m.model.id);
-        pushLog(
-          "info",
-          `Target model auto-set → ${m.model.displayName} (via ${m.via}${m.evidence ? ` "${m.evidence}"` : ""})`,
-        );
+      if (overrideModel) {
+        setTargetModelId(overrideModel.id);
+        pushLog("info", `Target model set from override → ${overrideModel.displayName}`);
+      } else {
+        const m = matchNinebotModel({
+          name: d.name,
+          serviceUuids: d.serviceUuids,
+          manufacturerIds: d.manufacturerIds,
+        });
+        if (m.via !== "fallback") {
+          setTargetModelId(m.model.id);
+          pushLog(
+            "info",
+            `Target model auto-set → ${m.model.displayName} (via ${m.via}${m.evidence ? ` "${m.evidence}"` : ""})`,
+          );
+        }
       }
     }
 
