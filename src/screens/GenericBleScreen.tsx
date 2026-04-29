@@ -36,6 +36,11 @@ import {
 } from "@/lib/generic-ble";
 import { detectNinebot } from "@/lib/ninebot-detect";
 import { matchNinebotModel, NINEBOT_MODELS, getNinebotModelById } from "@/lib/ninebot-models";
+import {
+  useDeviceModelOverrides,
+  setDeviceModelOverride,
+  clearDeviceModelOverride,
+} from "@/lib/device-model-overrides";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
 export type ConnState = "disconnected" | "connecting" | "connected" | "error";
@@ -326,6 +331,13 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
     }
   }, [preferredNinebotId]);
 
+  // Per-device model overrides — keyed by lowercased device id. When a
+  // device has an override, it wins over both the toolbar "Target model"
+  // pin and the registry's auto-detection. Lets the user permanently
+  // correct mis-identification for one specific scooter (e.g. by MAC)
+  // without affecting the rest of the scan list.
+  const deviceOverrides = useDeviceModelOverrides();
+
   const [connState, setConnState] = useState<ConnState>("disconnected");
   const [connError, setConnError] = useState<string | null>(null);
   const [connectedDevice, setConnectedDevice] = useState<GenericDevice | null>(null);
@@ -486,25 +498,41 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
     setAttemptOutcomes(Array.from({ length: MAX_ATTEMPTS }, () => "pending" as const));
     pushLog("info", `Connect requested → ${d.name || d.deviceId.slice(0, 17)}`);
 
+    // Resolve the model to log/pin for this connect: a per-device override
+    // (pinned by MAC) wins over auto-detection, since it's an explicit
+    // user assertion. Otherwise fall back to the registry's heuristic
+    // match. Either way we only mutate the toolbar `targetModelId` when
+    // the user hasn't already pinned a specific one (see rationale below).
+    const overrideId = deviceOverrides[d.deviceId.toLowerCase()] ?? null;
+    const overrideModel = overrideId ? getNinebotModelById(overrideId) : null;
+    if (overrideModel) {
+      pushLog("info", `Per-device model override active → ${overrideModel.displayName}`);
+    }
+
     // Auto-pin the Target model dropdown to the detected model when the
     // user hasn't already pinned a specific one. Rationale: clicking a
     // device in the scan list is an explicit "I want this scooter" signal,
     // so it's helpful to lock subsequent capability gating to the model we
-    // just identified — without overriding an existing manual choice. We
-    // skip the "fallback" match (no real identification) and skip when the
-    // detection didn't even fire (non-Ninebot device).
+    // just identified — without overriding an existing manual choice. The
+    // per-device override (if any) takes precedence over heuristic
+    // detection here too.
     if (targetModelId === "auto") {
-      const m = matchNinebotModel({
-        name: d.name,
-        serviceUuids: d.serviceUuids,
-        manufacturerIds: d.manufacturerIds,
-      });
-      if (m.via !== "fallback") {
-        setTargetModelId(m.model.id);
-        pushLog(
-          "info",
-          `Target model auto-set → ${m.model.displayName} (via ${m.via}${m.evidence ? ` "${m.evidence}"` : ""})`,
-        );
+      if (overrideModel) {
+        setTargetModelId(overrideModel.id);
+        pushLog("info", `Target model set from override → ${overrideModel.displayName}`);
+      } else {
+        const m = matchNinebotModel({
+          name: d.name,
+          serviceUuids: d.serviceUuids,
+          manufacturerIds: d.manufacturerIds,
+        });
+        if (m.via !== "fallback") {
+          setTargetModelId(m.model.id);
+          pushLog(
+            "info",
+            `Target model auto-set → ${m.model.displayName} (via ${m.via}${m.evidence ? ` "${m.evidence}"` : ""})`,
+          );
+        }
       }
     }
 
@@ -746,7 +774,7 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
       if (connectAbortRef.current === ac) connectAbortRef.current = null;
       connectInFlightRef.current = false;
     }
-  }, [connState, pushLog, setAttemptOutcome, targetModelId]);
+  }, [connState, pushLog, setAttemptOutcome, targetModelId, deviceOverrides]);
 
   const disconnect = useCallback(async () => {
     connectAbortRef.current?.abort();
@@ -773,10 +801,11 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
   /**
    * The model whose capability list governs which raw GATT controls are
    * exposed for the *connected* device. Resolution order:
-   *   1. The user's pinned `Target model`, if set — explicit always wins.
-   *   2. Otherwise the registry's auto-detection from the connected
+   *   1. Per-device override (pinned by MAC) — most specific, always wins.
+   *   2. The user's pinned `Target model`, if set — explicit, session-wide.
+   *   3. Otherwise the registry's auto-detection from the connected
    *      device's advertisement (name / service UUIDs / mfr IDs).
-   *   3. `null` when nothing is connected — gating is a no-op until
+   *   4. `null` when nothing is connected — gating is a no-op until
    *      there's a peripheral to gate against.
    *
    * We deliberately key the memo on the connected device's identity, not
@@ -785,6 +814,11 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
    */
   const activeModel = useMemo(() => {
     if (!connectedDevice) return null;
+    const overrideId = deviceOverrides[connectedDevice.deviceId.toLowerCase()];
+    if (overrideId) {
+      const m = getNinebotModelById(overrideId);
+      if (m) return m;
+    }
     if (targetModel) return targetModel;
     const detection = detectNinebot({
       name: connectedDevice.name,
@@ -802,7 +836,7 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
     // control than silently restrict the user when the registry didn't
     // actually recognise the device.
     return m.via === "fallback" ? null : m.model;
-  }, [connectedDevice, targetModel]);
+  }, [connectedDevice, targetModel, deviceOverrides]);
 
   // Capability flags for the active model. A `null` model means "no
   // gating in effect" — we surface that to the row as `null`/`null` so it
@@ -1150,6 +1184,17 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
                 ) {
                   connect(d);
                 }
+              }}
+              modelOverrideId={deviceOverrides[d.deviceId.toLowerCase()] ?? null}
+              onSetModelOverride={(modelId) => {
+                if (modelId) setDeviceModelOverride(d.deviceId, modelId);
+                else clearDeviceModelOverride(d.deviceId);
+                pushLog(
+                  "info",
+                  modelId
+                    ? `Pinned model for ${d.deviceId.slice(0, 17).toUpperCase()} → ${getNinebotModelById(modelId)?.displayName ?? modelId}`
+                    : `Cleared model override for ${d.deviceId.slice(0, 17).toUpperCase()}`,
+                );
               }}
             />
           ))}
@@ -2094,6 +2139,7 @@ function ConnStatusBanner({
 function DeviceRow({
   device, isConnected, isConnecting, disabled, onConnect, onDisconnect, targetModelId,
   preferredNinebotId, onUseThisNinebot,
+  modelOverrideId, onSetModelOverride,
 }: {
   device: GenericDevice;
   isConnected: boolean;
@@ -2114,6 +2160,12 @@ function DeviceRow({
   // when several are nearby.
   preferredNinebotId: string | null;
   onUseThisNinebot: () => void;
+  // Per-device model override (pinned by deviceId / MAC). When set, this
+  // model wins over both the toolbar Target pin and registry detection
+  // for this specific device — the safe escape hatch when auto-detect
+  // mis-identifies one scooter in a multi-device fleet.
+  modelOverrideId: string | null;
+  onSetModelOverride: (modelId: string | null) => void;
 }) {
   const bars = rssiBars(device.rssi);
   // Cheap, pure heuristic — runs once per render. Used to surface a
@@ -2146,9 +2198,13 @@ function DeviceRow({
   // disabled for them. We treat the fallback ("ninebot-unknown") as
   // *non-matching* on purpose — pinning a model is an explicit assertion
   // and we shouldn't connect when we can't even confidently identify the
-  // device family.
+  // device family. A per-device override (if any) supersedes auto-detect
+  // for the purpose of mismatch checks — that's the whole point of pinning.
   const isTargetPinned = targetModelId !== "auto";
-  const detectedModelId = ninebotModel?.via !== "fallback" ? ninebotModel?.model.id : null;
+  const overrideModel = modelOverrideId ? getNinebotModelById(modelOverrideId) : null;
+  const detectedModelId = overrideModel
+    ? overrideModel.id
+    : ninebotModel?.via !== "fallback" ? ninebotModel?.model.id : null;
   const targetMismatch = isTargetPinned && detectedModelId !== targetModelId;
   return (
     <motion.div
@@ -2224,6 +2280,18 @@ function DeviceRow({
                 MISMATCH
               </span>
             )}
+            {/* Per-device override chip — surfaces whenever the user has
+                pinned a model for this specific device (by MAC). Visible
+                on every row regardless of detection so it's obvious which
+                devices have a manual override applied. */}
+            {overrideModel && (
+              <span
+                className="chip text-[8px] tracking-widest text-primary border border-primary/40"
+                title={`Per-device override pinned to ${overrideModel.displayName}. Wins over auto-detection for this MAC.`}
+              >
+                PINNED · {overrideModel.shortLabel.toUpperCase()}
+              </span>
+            )}
           </div>
           <div className="mono text-[10px] text-muted-foreground tracking-widest truncate">
             {device.deviceId.slice(0, 17).toUpperCase()} · {device.rssi} dBm
@@ -2259,7 +2327,36 @@ function DeviceRow({
         </div>
       )}
 
-      <div className="mt-3 flex justify-end gap-2 flex-wrap">
+      <div className="mt-3 flex justify-end gap-2 flex-wrap items-center">
+        {/* Per-device model override — small inline picker that pins this
+            specific device (by id / MAC) to a model from the registry,
+            overriding auto-detection. The "Auto-detect" choice clears any
+            existing pin. Stays visible on every row so the user can
+            correct mis-identification on cloned/relabeled hardware
+            without affecting the rest of the scan list. */}
+        <Select
+          value={modelOverrideId ?? "auto"}
+          onValueChange={(v) => onSetModelOverride(v === "auto" ? null : v)}
+        >
+          <SelectTrigger
+            className="h-7 text-[10px] mono tracking-widest w-auto min-w-[140px] max-w-[200px]"
+            title={
+              overrideModel
+                ? `Pinned to ${overrideModel.displayName} for this device. Pick "Auto-detect" to remove.`
+                : "Pin a specific model for this device (by MAC). Useful when auto-detection is wrong."
+            }
+          >
+            <SelectValue placeholder="Auto-detect" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto" className="mono text-[11px]">Auto-detect</SelectItem>
+            {NINEBOT_MODELS.map((m) => (
+              <SelectItem key={m.id} value={m.id} className="mono text-[11px]">
+                {m.displayName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {/* "Use this Ninebot" — surfaces only on Ninebot-detected rows
             that aren't already pinned as the preferred device. Pins the
             choice and (re)connects so the telemetry decoder follows this
