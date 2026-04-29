@@ -801,10 +801,11 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
   /**
    * The model whose capability list governs which raw GATT controls are
    * exposed for the *connected* device. Resolution order:
-   *   1. The user's pinned `Target model`, if set — explicit always wins.
-   *   2. Otherwise the registry's auto-detection from the connected
+   *   1. Per-device override (pinned by MAC) — most specific, always wins.
+   *   2. The user's pinned `Target model`, if set — explicit, session-wide.
+   *   3. Otherwise the registry's auto-detection from the connected
    *      device's advertisement (name / service UUIDs / mfr IDs).
-   *   3. `null` when nothing is connected — gating is a no-op until
+   *   4. `null` when nothing is connected — gating is a no-op until
    *      there's a peripheral to gate against.
    *
    * We deliberately key the memo on the connected device's identity, not
@@ -813,6 +814,11 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
    */
   const activeModel = useMemo(() => {
     if (!connectedDevice) return null;
+    const overrideId = deviceOverrides[connectedDevice.deviceId.toLowerCase()];
+    if (overrideId) {
+      const m = getNinebotModelById(overrideId);
+      if (m) return m;
+    }
     if (targetModel) return targetModel;
     const detection = detectNinebot({
       name: connectedDevice.name,
@@ -830,7 +836,7 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
     // control than silently restrict the user when the registry didn't
     // actually recognise the device.
     return m.via === "fallback" ? null : m.model;
-  }, [connectedDevice, targetModel]);
+  }, [connectedDevice, targetModel, deviceOverrides]);
 
   // Capability flags for the active model. A `null` model means "no
   // gating in effect" — we surface that to the row as `null`/`null` so it
