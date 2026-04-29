@@ -1185,6 +1185,17 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
                   connect(d);
                 }
               }}
+              modelOverrideId={deviceOverrides[d.deviceId.toLowerCase()] ?? null}
+              onSetModelOverride={(modelId) => {
+                if (modelId) setDeviceModelOverride(d.deviceId, modelId);
+                else clearDeviceModelOverride(d.deviceId);
+                pushLog(
+                  "info",
+                  modelId
+                    ? `Pinned model for ${d.deviceId.slice(0, 17).toUpperCase()} → ${getNinebotModelById(modelId)?.displayName ?? modelId}`
+                    : `Cleared model override for ${d.deviceId.slice(0, 17).toUpperCase()}`,
+                );
+              }}
             />
           ))}
         </div>
