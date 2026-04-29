@@ -36,6 +36,11 @@ import {
 } from "@/lib/generic-ble";
 import { detectNinebot } from "@/lib/ninebot-detect";
 import { matchNinebotModel, NINEBOT_MODELS, getNinebotModelById } from "@/lib/ninebot-models";
+import {
+  useDeviceModelOverrides,
+  setDeviceModelOverride,
+  clearDeviceModelOverride,
+} from "@/lib/device-model-overrides";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
 export type ConnState = "disconnected" | "connecting" | "connected" | "error";
