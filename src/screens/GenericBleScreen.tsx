@@ -2327,7 +2327,36 @@ function DeviceRow({
         </div>
       )}
 
-      <div className="mt-3 flex justify-end gap-2 flex-wrap">
+      <div className="mt-3 flex justify-end gap-2 flex-wrap items-center">
+        {/* Per-device model override — small inline picker that pins this
+            specific device (by id / MAC) to a model from the registry,
+            overriding auto-detection. The "Auto-detect" choice clears any
+            existing pin. Stays visible on every row so the user can
+            correct mis-identification on cloned/relabeled hardware
+            without affecting the rest of the scan list. */}
+        <Select
+          value={modelOverrideId ?? "auto"}
+          onValueChange={(v) => onSetModelOverride(v === "auto" ? null : v)}
+        >
+          <SelectTrigger
+            className="h-7 text-[10px] mono tracking-widest w-auto min-w-[140px] max-w-[200px]"
+            title={
+              overrideModel
+                ? `Pinned to ${overrideModel.displayName} for this device. Pick "Auto-detect" to remove.`
+                : "Pin a specific model for this device (by MAC). Useful when auto-detection is wrong."
+            }
+          >
+            <SelectValue placeholder="Auto-detect" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto" className="mono text-[11px]">Auto-detect</SelectItem>
+            {NINEBOT_MODELS.map((m) => (
+              <SelectItem key={m.id} value={m.id} className="mono text-[11px]">
+                {m.displayName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {/* "Use this Ninebot" — surfaces only on Ninebot-detected rows
             that aren't already pinned as the preferred device. Pins the
             choice and (re)connects so the telemetry decoder follows this
