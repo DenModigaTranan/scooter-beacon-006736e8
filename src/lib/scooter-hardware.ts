@@ -591,11 +591,18 @@ export const BMS_MODULES: readonly BmsModule[] = [
  */
 export type MotherboardMcu =
   | "stm32f1"      // STM32F103 — original M365 / 1S / Pro / Pro 2 / Mi3
-  | "stm32g4"      // STM32G431 — Mi4 family
-  | "gd32f3"       // GigaDevice GD32 — late M365 production runs
+  | "stm32f0"      // STM32F0 — entry-level controllers (Razor, Gotrax, OKAI)
+  | "stm32f4"      // STM32F4 — performance boards (Dualtron, Kaabo, NAMI)
+  | "stm32g4"      // STM32G431 — Mi4, Apollo, NIU KQi3 Pro
+  | "stm32l4"      // STM32L4 — low-power (Bird, Lime fleet hardware)
+  | "gd32f3"       // GigaDevice GD32 — late M365, Joyor, iScooter clones
   | "n76e"         // Nuvoton N76E — Ninebot ES BLE module
-  | "nrf52"        // Nordic nRF52 — Ninebot Max BLE module
-  | "esp32"        // Espressif ESP32 — newer Ninebot G/F/Max-G2 BLE
+  | "nrf52"        // Nordic nRF52 — Ninebot Max + most premium BLE modules
+  | "nrf51"        // Nordic nRF51 — early Bird / Lime / Inokim modules
+  | "esp32"        // Espressif ESP32 — newer Ninebot G/F/Max-G2 + Apollo
+  | "ti-msp430"    // TI MSP430 — Razor / EcoSmart BMS
+  | "bq76930"      // TI BQ769x0 — common stack monitor (many BMS)
+  | "atmega"       // Atmel ATmega — older clones (Inokim Light 1, Egret Ten)
   | "unknown";
 
 export interface Motherboard {
