@@ -62,6 +62,40 @@ export type ScooterHardwareFamily =
   | "ninebot-e"     // E22/E25/E45 + Es
   | "ninebot-g"     // GT1/GT2/GT3 super-scooters
   | "ninebot-d"     // D-series
+  // ── Other brands (proprietary protocols; we surface reference data only) ──
+  | "inokim"        // Inokim Light/Quick/OX/OXO
+  | "dualtron"      // Minimotors Dualtron / EY3 / Mini-Motors apps
+  | "kaabo"         // Kaabo Mantis / Wolf / Skywalker
+  | "apollo"        // Apollo City / Air / Phantom / Pro / Ghost
+  | "unagi"         // Unagi Model One / Voyager
+  | "bird"          // Bird One / Air / Bird Three (consumer)
+  | "lime"          // Lime Gen3/Gen4 (rideshare; reference only)
+  | "razor"         // Razor E-series / EcoSmart / C-series
+  | "gotrax"        // Gotrax GXL / G4 / G6 / XR Elite
+  | "hiboy"         // Hiboy S2 / Max / Titan
+  | "turboant"      // Turboant X7 / V8 / M10
+  | "nanrobot"      // Nanrobot D6+ / LS7 / RS11
+  | "vsett"         // VSETT 8 / 9 / 10 / 11+
+  | "zero"          // Zero 8/9/10X/11X (Ecorider OEM)
+  | "emove"         // Voro Motors EMOVE Cruiser / Touring / RoadRunner
+  | "fluidfreeride" // Fluid Freeride Mantis / Horizon (Kaabo rebadge)
+  | "okai"          // OKAI ES10 / ES20 / ES400 / Beetle / Neon
+  | "joyor"         // Joyor S5/S8/S10/Y-series
+  | "iscooter"      // iScooter i9 / i10 / iX4 / iX5
+  | "pure"          // Pure Air / Air Pro / Advance
+  | "augment"       // Augment / NIU KQi family (NIU electric kick scooters)
+  | "yadea"         // Yadea KS5 / KS6 Pro / ElitePrime
+  | "atomi"         // Atomi Alpha / X / X Pro
+  | "levy"          // Levy Original / Plus
+  | "evolv"         // EVOLV Pro / Tour / Stride
+  | "speedway"      // Minimotors Speedway 4/5
+  | "cityblitz"     // CityBlitz CB016 / CB064 (EU clones)
+  | "egret"         // Egret Ten / Pro / X+
+  | "wegoboard"     // Wegoboard Suprem 3.0 / Slash 1700
+  | "yume"          // Yume Y10 / X11 / X13
+  | "currus"        // Currus NF10 / Panther
+  | "varla"         // Varla Eagle One / Pegasus / Falcon
+  | "smacircle"     // Smacircle / generic foldables
   | "clone";        // M365-compatible third-party boards
 
 /** Confidence level for community-sourced data we mirror here. */
