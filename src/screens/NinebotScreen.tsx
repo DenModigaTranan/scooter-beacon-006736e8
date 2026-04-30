@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Battery, Gauge, Lock, Route as RouteIcon, Zap, Info, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
 import { GenericBleScreen, type GenericBleDiagnostics } from "@/screens/GenericBleScreen";
 import { NinebotSupportedModels } from "@/components/NinebotSupportedModels";
+import { ScooterHardwareCatalog } from "@/components/ScooterHardwareCatalog";
 import { NinebotControlsPanel } from "@/components/NinebotControlsPanel";
 import { NinebotConnectionDiagnostics } from "@/components/NinebotConnectionDiagnostics";
 import { genericBle } from "@/lib/generic-ble";
@@ -308,6 +309,10 @@ export default function NinebotScreen() {
             each one can do once connected. Read-only; the registry is
             the single source of truth. */}
         <NinebotSupportedModels />
+
+        {/* Companion reference: BMS packs and motherboards that ship
+            inside those models. Sourced from public community data. */}
+        <ScooterHardwareCatalog />
       </main>
     </div>
   );
