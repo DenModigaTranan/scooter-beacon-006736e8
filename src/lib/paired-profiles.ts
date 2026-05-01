@@ -28,17 +28,39 @@ export interface PairedFlashRecord {
   result: string;
 }
 
+/**
+ * Which app profile this paired device belongs to. Lets the M365 ConnectScreen
+ * and the GenericBleScreen render disjoint paired lists from the same store.
+ * Older installs predate this field and are migrated to "m365" on read.
+ */
+export type PairedKind = "m365" | "generic-ble";
+
 export interface PairedProfile {
   /** Lowercased BLE address / OS-supplied device id. */
   deviceId: string;
+  /** Which screen / profile saved this entry. Defaults to "m365" for older data. */
+  kind: PairedKind;
   /** Advertised name at last connect (e.g. "MIScooter1234"). */
   advertisedName: string;
   /** Optional user-chosen nickname. */
   alias?: string;
-  /** Snapshot of the last successful `readInfo()`. */
+  /** Snapshot of the last successful M365 `readInfo()`. Only set for kind="m365". */
   lastInfo?: ScooterInfo;
-  /** Most recent flash from this app, if any. */
+  /** Most recent flash from this app, if any. Only set for kind="m365". */
   lastFlash?: PairedFlashRecord;
+  /**
+   * Service UUIDs advertised at last connect. Used by the Generic BLE paired
+   * panel to render a quick "what is this?" hint and by auto-reconnect to
+   * detect if the peripheral has changed identity since pairing.
+   */
+  serviceUuids?: string[];
+  /**
+   * Pinned Ninebot/Generic model id (from `NINEBOT_MODELS`), if the user
+   * confirmed one for this device on the Generic BLE screen. Persisted here
+   * — alongside the device-model-overrides store — so the paired list can
+   * show the model badge without consulting the override store.
+   */
+  pinnedModelId?: string;
   /** Epoch ms of first time we saw this device. */
   firstSeenAt: number;
   /** Epoch ms of most recent successful connection. */
@@ -48,7 +70,7 @@ export interface PairedProfile {
 }
 
 interface ProfileStore {
-  schemaVersion: 1;
+  schemaVersion: 2;
   profiles: Record<string, PairedProfile>;
 }
 
@@ -56,7 +78,7 @@ const STORAGE_KEY = "scootflash:paired-profiles";
 const CHANGE_EVENT = "scootflash:paired-profiles-changed";
 
 function emptyStore(): ProfileStore {
-  return { schemaVersion: 1, profiles: {} };
+  return { schemaVersion: 2, profiles: {} };
 }
 
 function read(): ProfileStore {
@@ -64,11 +86,22 @@ function read(): ProfileStore {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return emptyStore();
   try {
-    const parsed = JSON.parse(raw) as ProfileStore;
-    if (!parsed || parsed.schemaVersion !== 1 || typeof parsed.profiles !== "object") {
+    const parsed = JSON.parse(raw) as { schemaVersion: number; profiles?: Record<string, PairedProfile> };
+    if (!parsed || typeof parsed.profiles !== "object" || !parsed.profiles) {
       return emptyStore();
     }
-    return parsed;
+    // Forward-migrate v1 → v2: stamp every existing entry with kind="m365"
+    // so the M365 paired list keeps working unchanged. Generic BLE entries
+    // can only have been written under v2+, so anything missing `kind` is
+    // M365 by definition.
+    if (parsed.schemaVersion === 1 || parsed.schemaVersion === 2) {
+      const profiles: Record<string, PairedProfile> = {};
+      for (const [k, p] of Object.entries(parsed.profiles)) {
+        profiles[k] = { ...p, kind: (p as PairedProfile).kind ?? "m365" };
+      }
+      return { schemaVersion: 2, profiles };
+    }
+    return emptyStore();
   } catch {
     return emptyStore();
   }
@@ -84,8 +117,9 @@ function key(deviceId: string): string {
 }
 
 /** All paired profiles, sorted by most-recently-connected first. */
-export function listPairedProfiles(): PairedProfile[] {
-  return Object.values(read().profiles).sort((a, b) => b.lastConnectedAt - a.lastConnectedAt);
+export function listPairedProfiles(kind?: PairedKind): PairedProfile[] {
+  const all = Object.values(read().profiles).sort((a, b) => b.lastConnectedAt - a.lastConnectedAt);
+  return kind ? all.filter((p) => p.kind === kind) : all;
 }
 
 export function getPairedProfile(deviceId: string): PairedProfile | null {
@@ -93,8 +127,9 @@ export function getPairedProfile(deviceId: string): PairedProfile | null {
 }
 
 /**
- * Upsert a profile after a successful connect. Bumps `lastConnectedAt` and
- * `connectCount`, and merges `info` over any previous snapshot.
+ * Upsert an M365-flavoured profile after a successful protocol handshake.
+ * Bumps `lastConnectedAt` and `connectCount`, and merges `info` over any
+ * previous snapshot. Keeps the existing call sites in use-scooter.ts working.
  */
 export function upsertPairedProfile(
   device: Pick<DiscoveredDevice, "deviceId" | "name">,
@@ -106,10 +141,59 @@ export function upsertPairedProfile(
   const prev = store.profiles[k];
   const next: PairedProfile = {
     deviceId: k,
+    kind: "m365",
     advertisedName: device.name || prev?.advertisedName || "Unknown",
     alias: prev?.alias,
     lastInfo: info ?? prev?.lastInfo,
     lastFlash: prev?.lastFlash,
+    serviceUuids: prev?.serviceUuids,
+    pinnedModelId: prev?.pinnedModelId,
+    firstSeenAt: prev?.firstSeenAt ?? now,
+    lastConnectedAt: now,
+    connectCount: (prev?.connectCount ?? 0) + 1,
+  };
+  store.profiles[k] = next;
+  write(store);
+  return next;
+}
+
+/**
+ * Generic BLE flavour of upsert — used by the Generic BLE screen after a
+ * link is up and services have been discovered. Records the advertised
+ * service UUIDs (lowercased) so the paired panel can show what the device
+ * looked like, plus an optional pinned model id when the user has chosen
+ * one for this MAC on the Generic screen.
+ *
+ * Kept separate from `upsertPairedProfile` so:
+ *   • the M365 call site doesn't accidentally clear `serviceUuids` to undefined,
+ *   • the type system can guarantee `kind="generic-ble"` here without a
+ *     runtime branch on every M365 connect.
+ */
+export function upsertGenericPairedProfile(input: {
+  deviceId: string;
+  name?: string;
+  serviceUuids?: string[];
+  pinnedModelId?: string;
+}): PairedProfile {
+  const store = read();
+  const k = key(input.deviceId);
+  const now = Date.now();
+  const prev = store.profiles[k];
+  const dedupedUuids = input.serviceUuids
+    ? Array.from(new Set(input.serviceUuids.map((u) => u.toLowerCase())))
+    : prev?.serviceUuids;
+  const next: PairedProfile = {
+    deviceId: k,
+    kind: "generic-ble",
+    advertisedName: input.name || prev?.advertisedName || "(unnamed)",
+    alias: prev?.alias,
+    // Generic profiles never carry M365 lastInfo/lastFlash; leave any prior
+    // M365 data in place if a device somehow toggled between profiles, but
+    // don't surface it on the Generic panel (filtered by `kind`).
+    lastInfo: prev?.lastInfo,
+    lastFlash: prev?.lastFlash,
+    serviceUuids: dedupedUuids,
+    pinnedModelId: input.pinnedModelId ?? prev?.pinnedModelId,
     firstSeenAt: prev?.firstSeenAt ?? now,
     lastConnectedAt: now,
     connectCount: (prev?.connectCount ?? 0) + 1,
@@ -160,11 +244,12 @@ export function displayName(p: PairedProfile): string {
 /**
  * React hook returning the live list of paired profiles. Re-renders on
  * same-tab updates (via custom event) and cross-tab updates (via `storage`).
+ * Pass `kind` to scope the result to one app profile.
  */
-export function usePairedProfiles(): PairedProfile[] {
-  const [list, setList] = useState<PairedProfile[]>(() => listPairedProfiles());
+export function usePairedProfiles(kind?: PairedKind): PairedProfile[] {
+  const [list, setList] = useState<PairedProfile[]>(() => listPairedProfiles(kind));
   useEffect(() => {
-    const refresh = () => setList(listPairedProfiles());
+    const refresh = () => setList(listPairedProfiles(kind));
     const onStorage = (e: StorageEvent) => { if (e.key === STORAGE_KEY) refresh(); };
     window.addEventListener(CHANGE_EVENT, refresh);
     window.addEventListener("storage", onStorage);
