@@ -817,6 +817,33 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
     pushLog("disconnect", "Disconnected by user");
   }, [pushLog]);
 
+  // ---- auto-reconnect on mount ------------------------------------------
+  // When the user has previously connected to at least one BLE device AND
+  // toggled the "Auto" switch on the paired panel, immediately try to
+  // reconnect to the most-recently-used device. We do this exactly once
+  // per screen mount: re-firing on every state change would fight the
+  // user's manual disconnect.
+  const autoReconnectAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (autoReconnectAttemptedRef.current) return;
+    autoReconnectAttemptedRef.current = true;
+    if (!getGenericAutoReconnect()) return;
+    const candidates = listPairedProfiles("generic-ble");
+    const target = candidates[0];
+    if (!target) return;
+    const synthetic: GenericDevice = {
+      deviceId: target.deviceId,
+      name: target.advertisedName,
+      rssi: -127,
+      serviceUuids: target.serviceUuids ?? [],
+      manufacturerIds: [],
+    };
+    pushLog("info", `Auto-reconnect → ${target.advertisedName}`);
+    const t = setTimeout(() => { void connect(synthetic); }, 50);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ---- filtering ---------------------------------------------------------
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
