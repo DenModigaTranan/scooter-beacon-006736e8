@@ -1161,6 +1161,24 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
           )}
         </div>
 
+        {/* Paired (saved) devices — one-tap reconnect. Hidden when none exist. */}
+        <PairedGenericBle
+          busy={connState === "connecting"}
+          connectingId={connState === "connecting" ? connectedDevice?.deviceId ?? null : null}
+          connectedId={connState === "connected" ? connectedDevice?.deviceId ?? null : null}
+          onReconnect={(p) => {
+            const synthetic: GenericDevice = {
+              deviceId: p.deviceId,
+              name: p.advertisedName,
+              rssi: -127,
+              serviceUuids: p.serviceUuids ?? [],
+              manufacturerIds: [],
+            };
+            pushLog("info", `Reconnect from paired list → ${p.advertisedName}`);
+            connect(synthetic);
+          }}
+        />
+
         {/* Device list */}
         <div className="space-y-2">
           {scanState === "scanning" && filtered.length === 0 && (
