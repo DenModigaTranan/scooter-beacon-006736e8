@@ -41,6 +41,15 @@ import {
   setDeviceModelOverride,
   clearDeviceModelOverride,
 } from "@/lib/device-model-overrides";
+import {
+  upsertGenericPairedProfile,
+  listPairedProfiles,
+  type PairedProfile,
+} from "@/lib/paired-profiles";
+import {
+  PairedGenericBle,
+  getGenericAutoReconnect,
+} from "@/components/PairedGenericBle";
 
 type ScanState = "idle" | "scanning" | "stopped" | "error";
 export type ConnState = "disconnected" | "connecting" | "connected" | "error";
