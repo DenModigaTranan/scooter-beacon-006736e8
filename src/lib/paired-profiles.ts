@@ -257,6 +257,6 @@ export function usePairedProfiles(kind?: PairedKind): PairedProfile[] {
       window.removeEventListener(CHANGE_EVENT, refresh);
       window.removeEventListener("storage", onStorage);
     };
-  }, []);
+  }, [kind]);
   return list;
 }
