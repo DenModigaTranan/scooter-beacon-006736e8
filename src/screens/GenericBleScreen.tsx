@@ -747,12 +747,33 @@ export function GenericBleScreen({ onDiagnostics }: GenericBleScreenProps = {}) 
       setConnState("connected");
       setConnectPhase({ kind: "idle" });
       setDiscovering(true);
+      let discoveredServices: GenericServiceInfo[] = [];
       try {
-        const svcs = await genericBle.discoverServices();
-        if (!aborted()) setServices(svcs);
+        discoveredServices = await genericBle.discoverServices();
+        if (!aborted()) setServices(discoveredServices);
       } finally {
         setDiscovering(false);
       }
+      // Persist the paired profile so the user can re-connect with one tap
+      // next time. We do this after discovery so we can stash the actual
+      // service UUIDs the device exposes (more useful than the truncated
+      // advertisement record) and any pinned model the user has set for
+      // this MAC. Wrapped in try/catch — a localStorage failure must never
+      // tear down a healthy connection.
+      try {
+        const overrideId = deviceOverrides[d.deviceId.toLowerCase()];
+        const pinnedModelId =
+          overrideId ||
+          (targetModelId !== "auto" ? targetModelId : undefined);
+        upsertGenericPairedProfile({
+          deviceId: d.deviceId,
+          name: d.name,
+          serviceUuids: discoveredServices.length > 0
+            ? discoveredServices.map((s) => s.uuid)
+            : d.serviceUuids,
+          pinnedModelId,
+        });
+      } catch { /* swallow — pairing persistence is best-effort */ }
       // Final recap for the success branch — emitted after discovery so the
       // total time covers the full "user clicks → ready to use" experience.
       emitSummary("success");
