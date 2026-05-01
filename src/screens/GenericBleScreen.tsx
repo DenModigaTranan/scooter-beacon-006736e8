@@ -44,7 +44,6 @@ import {
 import {
   upsertGenericPairedProfile,
   listPairedProfiles,
-  type PairedProfile,
 } from "@/lib/paired-profiles";
 import {
   PairedGenericBle,
