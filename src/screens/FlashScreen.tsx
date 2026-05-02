@@ -54,6 +54,12 @@ export function FlashScreen() {
    * handshake snapshot changes so the user must re-tick after a re-handshake.
    */
   const [cloneAck, setCloneAck] = useState(false);
+  /**
+   * Acknowledgement required when the chosen catalog entry has a missing or
+   * placeholder SHA-256 (i.e. integrity cannot be verified). Reset whenever
+   * the selected firmware changes.
+   */
+  const [unverifiedAck, setUnverifiedAck] = useState(false);
   const [progress, setProgress] = useState(0);
   const [bytesWritten, setBytesWritten] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
@@ -143,31 +149,35 @@ export function FlashScreen() {
     [catalogQ.data, target]
   );
 
+  // Catalog entries without a valid 64-char hex SHA-256 cannot be integrity-
+  // verified. Surface this to the user and require an extra ack. Custom
+  // local files don't go through the catalog, so this only applies to
+  // `selected` (catalog) entries that have a `url`.
+  const hashUnverified = useMemo(() => {
+    if (!selected || !selected.url) return false;
+    const h = (selected.sha256 ?? "").trim().toLowerCase();
+    return !/^[0-9a-f]{64}$/.test(h);
+  }, [selected]);
+
   // ─── Pre-flight checks ─────────────────────────────────────────────
   const checks = useMemo(() => {
     const connected = connState === "connected";
     const handshakeOk = !!handshake?.ok;
     const battery = (telemetry?.batteryPct ?? 0) >= MIN_SCOOTER_BATTERY_PCT;
     const moving = (telemetry?.speedKph ?? 0) <= 0.5;
-    // If the API isn't available we don't block — but if it IS available we
-    // require ≥ MIN_PHONE_BATTERY_PCT so a dying phone can't drop the BLE link
-    // mid-flash.
     const phone = phoneBattery.unsupported || phoneBattery.charging === true || (phoneBattery.pct ?? 0) >= MIN_PHONE_BATTERY_PCT;
     const fwOk = !!(selected || customFile);
     const confirmOk = confirmText === "CONFIRM";
     const versionDetected = !!info;
-    // Clone-tolerant gating: if the handshake resolved against a non-strict
-    // GATT variant, require an additional ack on top of the base risk ack.
-    // This keeps the safety bar HIGHER for clones, not lower.
     const cloneOk = !handshake?.cloneMode || cloneAck;
-    const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck && cloneOk;
-    return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, cloneOk, all };
-  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck, cloneAck]);
+    const integrityOk = !hashUnverified || unverifiedAck;
+    const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck && cloneOk && integrityOk;
+    return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, cloneOk, integrityOk, all };
+  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck, cloneAck, hashUnverified, unverifiedAck]);
 
-  // Reset the clone-mode ack any time the handshake snapshot changes so the
-  // user can't accidentally inherit a previous tick after a re-handshake or
-  // after switching to a different device.
+  // Reset acks when their underlying condition changes.
   useEffect(() => { setCloneAck(false); }, [handshake?.at, handshake?.variantId]);
+  useEffect(() => { setUnverifiedAck(false); }, [selected?.id, customFile?.name]);
 
   // ─── Safety guard called by scooter.flash() before every chunk ─────
   const safetyCheck = (): string | null => {
@@ -290,23 +300,29 @@ export function FlashScreen() {
           const expected = (selected.sha256 ?? "").trim().toLowerCase();
           const isValidHash = /^[0-9a-f]{64}$/.test(expected);
           if (!isValidHash) {
-            throw new Error(
-              `Catalog entry has no valid SHA-256 (got "${selected.sha256 ?? "—"}"). ` +
-              `Refusing to flash unverified firmware.`
-            );
+            // Missing/placeholder hash — only proceed if the user explicitly
+            // acknowledged the unverified-firmware warning in step 3.
+            if (!unverifiedAck) {
+              throw new Error(
+                `Catalog entry has no valid SHA-256 (got "${selected.sha256 ?? "—"}"). ` +
+                `Refusing to flash unverified firmware.`
+              );
+            }
+            appendLog(`! WARNING: catalog has no SHA-256 — flashing unverified firmware (user acknowledged)`);
+          } else {
+            const hashBuf = await crypto.subtle.digest("SHA-256", firmwareBytes.slice().buffer as ArrayBuffer);
+            const actual = Array.from(new Uint8Array(hashBuf))
+              .map((b) => b.toString(16).padStart(2, "0"))
+              .join("");
+            if (actual !== expected) {
+              appendLog(`! sha256 mismatch — expected ${expected}, got ${actual}`);
+              throw new Error(
+                `Firmware integrity check failed. The downloaded bytes do not match the ` +
+                `catalog SHA-256. Aborting to protect your hardware.`
+              );
+            }
+            appendLog(`> sha256 verified (${actual.slice(0, 12)}…)`);
           }
-          const hashBuf = await crypto.subtle.digest("SHA-256", firmwareBytes.slice().buffer as ArrayBuffer);
-          const actual = Array.from(new Uint8Array(hashBuf))
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
-          if (actual !== expected) {
-            appendLog(`! sha256 mismatch — expected ${expected}, got ${actual}`);
-            throw new Error(
-              `Firmware integrity check failed. The downloaded bytes do not match the ` +
-              `catalog SHA-256. Aborting to protect your hardware.`
-            );
-          }
-          appendLog(`> sha256 verified (${actual.slice(0, 12)}…)`);
         } else {
           appendLog(`! no URL — using simulated buffer (${selected.size}B)`);
           firmwareBytes = new Uint8Array(selected.size);
@@ -434,7 +450,7 @@ export function FlashScreen() {
   const reset = () => {
     setStep(1); setSelected(null); setCustomFile(null);
     setProgress(0); setBytesWritten(0); setTotalBytes(0); setDownloadedBytes(0);
-    setFlashResult(null); setConfirmText(""); setRiskAck(false);
+    setFlashResult(null); setConfirmText(""); setRiskAck(false); setUnverifiedAck(false);
     setFlashStatus("idle"); setFlashError("");
     setPhaseStates({
       download: "pending", arm: "pending", write: "pending", verify: "pending", done: "pending",
@@ -655,6 +671,39 @@ export function FlashScreen() {
                   />
                   <span className="text-xs text-muted-foreground leading-relaxed">
                     I understand this is a clone / non-genuine device and accept the elevated brick risk.
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {hashUnverified && (
+              <div className="panel mt-3 p-4 border-destructive/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4 text-destructive" />
+                  <div className="mono text-xs tracking-widest text-destructive">
+                    UNVERIFIED FIRMWARE
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-2">
+                  This catalog entry has{" "}
+                  <span className="mono text-destructive">no valid SHA-256</span>{" "}
+                  (got <span className="mono">"{selected?.sha256 ?? "—"}"</span>).
+                  The downloaded bytes cannot be checked for tampering or
+                  corruption before they reach your hardware.
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                  Only continue if you trust the source of this firmware.
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={unverifiedAck}
+                    onChange={(e) => setUnverifiedAck(e.target.checked)}
+                    className="mt-0.5 accent-destructive"
+                  />
+                  <span className="text-xs text-muted-foreground leading-relaxed">
+                    I understand the firmware integrity cannot be verified and
+                    accept the risk of flashing tampered or corrupted bytes.
                   </span>
                 </label>
               </div>
