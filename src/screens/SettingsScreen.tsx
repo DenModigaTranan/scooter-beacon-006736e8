@@ -3,11 +3,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScooter } from "@/hooks/use-scooter";
 import { getCatalogUrl, setCatalogUrl } from "@/lib/m365/catalog";
+import {
+  addTrustedSource,
+  listTrustedSources,
+  removeTrustedSource,
+  normalisePrefix,
+  type TrustedSource,
+} from "@/lib/trusted-sources";
 import { ProfilePicker } from "@/components/ProfilePicker";
 import { Share } from "@capacitor/share";
 import { Capacitor } from "@capacitor/core";
 import { toast } from "sonner";
-import { Github, LogOut, Trash2, Upload } from "lucide-react";
+import { Github, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
 
 export function SettingsScreen() {
   const { disconnect, selected, flashLog, clearLog } = useScooter();
