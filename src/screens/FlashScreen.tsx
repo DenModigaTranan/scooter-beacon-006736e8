@@ -23,6 +23,7 @@ import { FlashStepList, type Phase, type PhaseId, type PhaseState } from "@/comp
 import { FlashLogConsole } from "@/components/FlashLogConsole";
 import { formatBytes, formatDuration, formatRate } from "@/lib/format";
 import { recordPairedFlash } from "@/lib/paired-profiles";
+import { findTrustedSource } from "@/lib/trusted-sources";
 
 type Target = "DRV" | "BMS" | "BLE";
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -159,6 +160,14 @@ export function FlashScreen() {
     return !/^[0-9a-f]{64}$/.test(h);
   }, [selected]);
 
+  // If the firmware URL belongs to a source the user marked as trusted,
+  // surface the matching entry so the UI can explain *why* the unverified
+  // ack was bypassed.
+  const trustedMatch = useMemo(
+    () => (selected?.url ? findTrustedSource(selected.url) : null),
+    [selected?.url],
+  );
+
   // ─── Pre-flight checks ─────────────────────────────────────────────
   const checks = useMemo(() => {
     const connected = connState === "connected";
@@ -170,10 +179,11 @@ export function FlashScreen() {
     const confirmOk = confirmText === "CONFIRM";
     const versionDetected = !!info;
     const cloneOk = !handshake?.cloneMode || cloneAck;
-    const integrityOk = !hashUnverified || unverifiedAck;
+    // A trusted source implicitly satisfies the unverified-firmware ack.
+    const integrityOk = !hashUnverified || unverifiedAck || !!trustedMatch;
     const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck && cloneOk && integrityOk;
     return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, cloneOk, integrityOk, all };
-  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck, cloneAck, hashUnverified, unverifiedAck]);
+  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck, cloneAck, hashUnverified, unverifiedAck, trustedMatch]);
 
   // Reset acks when their underlying condition changes.
   useEffect(() => { setCloneAck(false); }, [handshake?.at, handshake?.variantId]);
@@ -300,15 +310,21 @@ export function FlashScreen() {
           const expected = (selected.sha256 ?? "").trim().toLowerCase();
           const isValidHash = /^[0-9a-f]{64}$/.test(expected);
           if (!isValidHash) {
-            // Missing/placeholder hash — only proceed if the user explicitly
-            // acknowledged the unverified-firmware warning in step 3.
-            if (!unverifiedAck) {
+            // Missing/placeholder hash — proceed only if the user has either
+            // explicitly acknowledged the unverified-firmware warning OR the
+            // download URL belongs to a source they marked as trusted.
+            const trusted = findTrustedSource(selected.url);
+            if (!unverifiedAck && !trusted) {
               throw new Error(
                 `Catalog entry has no valid SHA-256 (got "${selected.sha256 ?? "—"}"). ` +
                 `Refusing to flash unverified firmware.`
               );
             }
-            appendLog(`! WARNING: catalog has no SHA-256 — flashing unverified firmware (user acknowledged)`);
+            if (trusted) {
+              appendLog(`> no SHA-256, but source "${trusted.label}" is trusted (${trusted.prefix})`);
+            } else {
+              appendLog(`! WARNING: catalog has no SHA-256 — flashing unverified firmware (user acknowledged)`);
+            }
           } else {
             const hashBuf = await crypto.subtle.digest("SHA-256", firmwareBytes.slice().buffer as ArrayBuffer);
             const actual = Array.from(new Uint8Array(hashBuf))
@@ -676,7 +692,25 @@ export function FlashScreen() {
               </div>
             )}
 
-            {hashUnverified && (
+            {hashUnverified && trustedMatch && (
+              <div className="panel mt-3 p-4 border-primary/40">
+                <div className="flex items-center gap-2 mb-2">
+                  <ShieldCheck className="w-4 h-4 text-primary-glow" />
+                  <div className="mono text-xs tracking-widest text-primary-glow">
+                    TRUSTED SOURCE
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  This entry has no SHA-256, but its URL matches the trusted
+                  source <span className="mono text-foreground">{trustedMatch.label}</span>{" "}
+                  (<span className="mono">{trustedMatch.prefix}</span>). Integrity
+                  cannot be cryptographically verified — you are relying on
+                  the source itself. Manage trusted sources in Settings.
+                </p>
+              </div>
+            )}
+
+            {hashUnverified && !trustedMatch && (
               <div className="panel mt-3 p-4 border-destructive/50">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertTriangle className="w-4 h-4 text-destructive" />
@@ -692,7 +726,9 @@ export function FlashScreen() {
                   corruption before they reach your hardware.
                 </p>
                 <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-                  Only continue if you trust the source of this firmware.
+                  Only continue if you trust the source of this firmware. You
+                  can mark a source as trusted in Settings → Trusted firmware
+                  sources to skip this prompt next time.
                 </p>
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
