@@ -149,31 +149,35 @@ export function FlashScreen() {
     [catalogQ.data, target]
   );
 
+  // Catalog entries without a valid 64-char hex SHA-256 cannot be integrity-
+  // verified. Surface this to the user and require an extra ack. Custom
+  // local files don't go through the catalog, so this only applies to
+  // `selected` (catalog) entries that have a `url`.
+  const hashUnverified = useMemo(() => {
+    if (!selected || !selected.url) return false;
+    const h = (selected.sha256 ?? "").trim().toLowerCase();
+    return !/^[0-9a-f]{64}$/.test(h);
+  }, [selected]);
+
   // ─── Pre-flight checks ─────────────────────────────────────────────
   const checks = useMemo(() => {
     const connected = connState === "connected";
     const handshakeOk = !!handshake?.ok;
     const battery = (telemetry?.batteryPct ?? 0) >= MIN_SCOOTER_BATTERY_PCT;
     const moving = (telemetry?.speedKph ?? 0) <= 0.5;
-    // If the API isn't available we don't block — but if it IS available we
-    // require ≥ MIN_PHONE_BATTERY_PCT so a dying phone can't drop the BLE link
-    // mid-flash.
     const phone = phoneBattery.unsupported || phoneBattery.charging === true || (phoneBattery.pct ?? 0) >= MIN_PHONE_BATTERY_PCT;
     const fwOk = !!(selected || customFile);
     const confirmOk = confirmText === "CONFIRM";
     const versionDetected = !!info;
-    // Clone-tolerant gating: if the handshake resolved against a non-strict
-    // GATT variant, require an additional ack on top of the base risk ack.
-    // This keeps the safety bar HIGHER for clones, not lower.
     const cloneOk = !handshake?.cloneMode || cloneAck;
-    const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck && cloneOk;
-    return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, cloneOk, all };
-  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck, cloneAck]);
+    const integrityOk = !hashUnverified || unverifiedAck;
+    const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck && cloneOk && integrityOk;
+    return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, cloneOk, integrityOk, all };
+  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck, cloneAck, hashUnverified, unverifiedAck]);
 
-  // Reset the clone-mode ack any time the handshake snapshot changes so the
-  // user can't accidentally inherit a previous tick after a re-handshake or
-  // after switching to a different device.
+  // Reset acks when their underlying condition changes.
   useEffect(() => { setCloneAck(false); }, [handshake?.at, handshake?.variantId]);
+  useEffect(() => { setUnverifiedAck(false); }, [selected?.id, customFile?.name]);
 
   // ─── Safety guard called by scooter.flash() before every chunk ─────
   const safetyCheck = (): string | null => {
