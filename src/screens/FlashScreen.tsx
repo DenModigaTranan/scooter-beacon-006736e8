@@ -54,6 +54,12 @@ export function FlashScreen() {
    * handshake snapshot changes so the user must re-tick after a re-handshake.
    */
   const [cloneAck, setCloneAck] = useState(false);
+  /**
+   * Acknowledgement required when the chosen catalog entry has a missing or
+   * placeholder SHA-256 (i.e. integrity cannot be verified). Reset whenever
+   * the selected firmware changes.
+   */
+  const [unverifiedAck, setUnverifiedAck] = useState(false);
   const [progress, setProgress] = useState(0);
   const [bytesWritten, setBytesWritten] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
