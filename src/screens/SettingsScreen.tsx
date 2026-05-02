@@ -19,6 +19,34 @@ import { Github, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-rea
 export function SettingsScreen() {
   const { disconnect, selected, flashLog, clearLog } = useScooter();
   const [url, setUrl] = useState(getCatalogUrl());
+  const [trusted, setTrusted] = useState<TrustedSource[]>(() => listTrustedSources());
+  const [newLabel, setNewLabel] = useState("");
+  const [newPrefix, setNewPrefix] = useState("");
+
+  const refreshTrusted = () => setTrusted(listTrustedSources());
+
+  const onAddTrusted = () => {
+    const norm = normalisePrefix(newPrefix);
+    if (!norm) {
+      toast.error("Enter a valid https:// URL or origin");
+      return;
+    }
+    const entry = addTrustedSource(newLabel, newPrefix);
+    if (!entry) {
+      toast.error("Could not add trusted source");
+      return;
+    }
+    refreshTrusted();
+    setNewLabel("");
+    setNewPrefix("");
+    toast.success(`Trusted: ${entry.label}`);
+  };
+
+  const onRemoveTrusted = (prefix: string) => {
+    removeTrustedSource(prefix);
+    refreshTrusted();
+    toast.success("Removed trusted source");
+  };
 
   const onSave = () => {
     setCatalogUrl(url);
