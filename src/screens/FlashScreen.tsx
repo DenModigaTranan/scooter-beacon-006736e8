@@ -310,15 +310,21 @@ export function FlashScreen() {
           const expected = (selected.sha256 ?? "").trim().toLowerCase();
           const isValidHash = /^[0-9a-f]{64}$/.test(expected);
           if (!isValidHash) {
-            // Missing/placeholder hash — only proceed if the user explicitly
-            // acknowledged the unverified-firmware warning in step 3.
-            if (!unverifiedAck) {
+            // Missing/placeholder hash — proceed only if the user has either
+            // explicitly acknowledged the unverified-firmware warning OR the
+            // download URL belongs to a source they marked as trusted.
+            const trusted = findTrustedSource(selected.url);
+            if (!unverifiedAck && !trusted) {
               throw new Error(
                 `Catalog entry has no valid SHA-256 (got "${selected.sha256 ?? "—"}"). ` +
                 `Refusing to flash unverified firmware.`
               );
             }
-            appendLog(`! WARNING: catalog has no SHA-256 — flashing unverified firmware (user acknowledged)`);
+            if (trusted) {
+              appendLog(`> no SHA-256, but source "${trusted.label}" is trusted (${trusted.prefix})`);
+            } else {
+              appendLog(`! WARNING: catalog has no SHA-256 — flashing unverified firmware (user acknowledged)`);
+            }
           } else {
             const hashBuf = await crypto.subtle.digest("SHA-256", firmwareBytes.slice().buffer as ArrayBuffer);
             const actual = Array.from(new Uint8Array(hashBuf))
