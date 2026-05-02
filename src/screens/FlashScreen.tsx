@@ -450,7 +450,7 @@ export function FlashScreen() {
   const reset = () => {
     setStep(1); setSelected(null); setCustomFile(null);
     setProgress(0); setBytesWritten(0); setTotalBytes(0); setDownloadedBytes(0);
-    setFlashResult(null); setConfirmText(""); setRiskAck(false);
+    setFlashResult(null); setConfirmText(""); setRiskAck(false); setUnverifiedAck(false);
     setFlashStatus("idle"); setFlashError("");
     setPhaseStates({
       download: "pending", arm: "pending", write: "pending", verify: "pending", done: "pending",
