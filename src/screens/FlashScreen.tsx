@@ -160,6 +160,14 @@ export function FlashScreen() {
     return !/^[0-9a-f]{64}$/.test(h);
   }, [selected]);
 
+  // If the firmware URL belongs to a source the user marked as trusted,
+  // surface the matching entry so the UI can explain *why* the unverified
+  // ack was bypassed.
+  const trustedMatch = useMemo(
+    () => (selected?.url ? findTrustedSource(selected.url) : null),
+    [selected?.url],
+  );
+
   // ─── Pre-flight checks ─────────────────────────────────────────────
   const checks = useMemo(() => {
     const connected = connState === "connected";
@@ -171,10 +179,11 @@ export function FlashScreen() {
     const confirmOk = confirmText === "CONFIRM";
     const versionDetected = !!info;
     const cloneOk = !handshake?.cloneMode || cloneAck;
-    const integrityOk = !hashUnverified || unverifiedAck;
+    // A trusted source implicitly satisfies the unverified-firmware ack.
+    const integrityOk = !hashUnverified || unverifiedAck || !!trustedMatch;
     const all = connected && handshakeOk && battery && moving && phone && fwOk && confirmOk && versionDetected && riskAck && cloneOk && integrityOk;
     return { connected, handshakeOk, battery, moving, phone, fwOk, confirmOk, versionDetected, cloneOk, integrityOk, all };
-  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck, cloneAck, hashUnverified, unverifiedAck]);
+  }, [connState, handshake, telemetry, phoneBattery, selected, customFile, confirmText, info, riskAck, cloneAck, hashUnverified, unverifiedAck, trustedMatch]);
 
   // Reset acks when their underlying condition changes.
   useEffect(() => { setCloneAck(false); }, [handshake?.at, handshake?.variantId]);
