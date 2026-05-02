@@ -676,6 +676,39 @@ export function FlashScreen() {
               </div>
             )}
 
+            {hashUnverified && (
+              <div className="panel mt-3 p-4 border-destructive/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4 text-destructive" />
+                  <div className="mono text-xs tracking-widest text-destructive">
+                    UNVERIFIED FIRMWARE
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-2">
+                  This catalog entry has{" "}
+                  <span className="mono text-destructive">no valid SHA-256</span>{" "}
+                  (got <span className="mono">"{selected?.sha256 ?? "—"}"</span>).
+                  The downloaded bytes cannot be checked for tampering or
+                  corruption before they reach your hardware.
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                  Only continue if you trust the source of this firmware.
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={unverifiedAck}
+                    onChange={(e) => setUnverifiedAck(e.target.checked)}
+                    className="mt-0.5 accent-destructive"
+                  />
+                  <span className="text-xs text-muted-foreground leading-relaxed">
+                    I understand the firmware integrity cannot be verified and
+                    accept the risk of flashing tampered or corrupted bytes.
+                  </span>
+                </label>
+              </div>
+            )}
+
             <div className="panel mt-3 p-4 border-warning/40">
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="w-4 h-4 text-warning" />
