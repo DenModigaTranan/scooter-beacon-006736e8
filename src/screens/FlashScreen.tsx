@@ -295,7 +295,7 @@ export function FlashScreen() {
               `Refusing to flash unverified firmware.`
             );
           }
-          const hashBuf = await crypto.subtle.digest("SHA-256", firmwareBytes);
+          const hashBuf = await crypto.subtle.digest("SHA-256", firmwareBytes.slice().buffer as ArrayBuffer);
           const actual = Array.from(new Uint8Array(hashBuf))
             .map((b) => b.toString(16).padStart(2, "0"))
             .join("");
