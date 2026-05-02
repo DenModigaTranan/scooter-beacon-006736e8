@@ -692,7 +692,25 @@ export function FlashScreen() {
               </div>
             )}
 
-            {hashUnverified && (
+            {hashUnverified && trustedMatch && (
+              <div className="panel mt-3 p-4 border-primary/40">
+                <div className="flex items-center gap-2 mb-2">
+                  <ShieldCheck className="w-4 h-4 text-primary-glow" />
+                  <div className="mono text-xs tracking-widest text-primary-glow">
+                    TRUSTED SOURCE
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  This entry has no SHA-256, but its URL matches the trusted
+                  source <span className="mono text-foreground">{trustedMatch.label}</span>{" "}
+                  (<span className="mono">{trustedMatch.prefix}</span>). Integrity
+                  cannot be cryptographically verified — you are relying on
+                  the source itself. Manage trusted sources in Settings.
+                </p>
+              </div>
+            )}
+
+            {hashUnverified && !trustedMatch && (
               <div className="panel mt-3 p-4 border-destructive/50">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertTriangle className="w-4 h-4 text-destructive" />
@@ -708,7 +726,9 @@ export function FlashScreen() {
                   corruption before they reach your hardware.
                 </p>
                 <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-                  Only continue if you trust the source of this firmware.
+                  Only continue if you trust the source of this firmware. You
+                  can mark a source as trusted in Settings → Trusted firmware
+                  sources to skip this prompt next time.
                 </p>
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
