@@ -300,23 +300,29 @@ export function FlashScreen() {
           const expected = (selected.sha256 ?? "").trim().toLowerCase();
           const isValidHash = /^[0-9a-f]{64}$/.test(expected);
           if (!isValidHash) {
-            throw new Error(
-              `Catalog entry has no valid SHA-256 (got "${selected.sha256 ?? "—"}"). ` +
-              `Refusing to flash unverified firmware.`
-            );
+            // Missing/placeholder hash — only proceed if the user explicitly
+            // acknowledged the unverified-firmware warning in step 3.
+            if (!unverifiedAck) {
+              throw new Error(
+                `Catalog entry has no valid SHA-256 (got "${selected.sha256 ?? "—"}"). ` +
+                `Refusing to flash unverified firmware.`
+              );
+            }
+            appendLog(`! WARNING: catalog has no SHA-256 — flashing unverified firmware (user acknowledged)`);
+          } else {
+            const hashBuf = await crypto.subtle.digest("SHA-256", firmwareBytes.slice().buffer as ArrayBuffer);
+            const actual = Array.from(new Uint8Array(hashBuf))
+              .map((b) => b.toString(16).padStart(2, "0"))
+              .join("");
+            if (actual !== expected) {
+              appendLog(`! sha256 mismatch — expected ${expected}, got ${actual}`);
+              throw new Error(
+                `Firmware integrity check failed. The downloaded bytes do not match the ` +
+                `catalog SHA-256. Aborting to protect your hardware.`
+              );
+            }
+            appendLog(`> sha256 verified (${actual.slice(0, 12)}…)`);
           }
-          const hashBuf = await crypto.subtle.digest("SHA-256", firmwareBytes.slice().buffer as ArrayBuffer);
-          const actual = Array.from(new Uint8Array(hashBuf))
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
-          if (actual !== expected) {
-            appendLog(`! sha256 mismatch — expected ${expected}, got ${actual}`);
-            throw new Error(
-              `Firmware integrity check failed. The downloaded bytes do not match the ` +
-              `catalog SHA-256. Aborting to protect your hardware.`
-            );
-          }
-          appendLog(`> sha256 verified (${actual.slice(0, 12)}…)`);
         } else {
           appendLog(`! no URL — using simulated buffer (${selected.size}B)`);
           firmwareBytes = new Uint8Array(selected.size);
