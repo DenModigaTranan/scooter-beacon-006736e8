@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScooter } from "@/hooks/use-scooter";
+import { useScooterStore } from "@/store/scooter-store";
 import { getCatalogUrl, setCatalogUrl } from "@/lib/m365/catalog";
 import {
   addTrustedSource,
