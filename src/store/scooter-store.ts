@@ -33,6 +33,7 @@ interface ScooterStore {
   setPendingFlash: (fw: FirmwareEntry | null) => void;
   setHandshake: (h: HandshakeResult | null) => void;
   setExtendedInfo: (e: ExtendedDeviceInfo | null) => void;
+  setFlashing: (v: boolean) => void;
 }
 
 export const useScooterStore = create<ScooterStore>((set) => ({
