@@ -65,7 +65,12 @@ export function FlashScreen() {
   const [bytesWritten, setBytesWritten] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
   const [downloadedBytes, setDownloadedBytes] = useState(0);
-  const [flashing, setFlashing] = useState(false);
+  const [flashing, setFlashingLocal] = useState(false);
+  const setFlashingStore = useScooterStore((s) => s.setFlashing);
+  const setFlashing = (v: boolean) => {
+    setFlashingLocal(v);
+    setFlashingStore(v);
+  };
   const [flashStatus, setFlashStatus] = useState<string>("idle");
   const [safeToAbort, setSafeToAbort] = useState(true);
   const [flashResult, setFlashResult] = useState<"success" | "error" | "aborted-safe" | "aborted-unsafe" | null>(null);

@@ -12,6 +12,8 @@ interface ScooterStore {
   telemetry: Telemetry | null;
   errorMessage: string | null;
   flashLog: string[];
+  /** True while a firmware write is actively in progress. */
+  flashing: boolean;
   /** A firmware entry queued from the Catalog screen for the Flash flow to pick up. */
   pendingFlash: FirmwareEntry | null;
   /** Latest BLE GATT handshake result, or null if not yet validated. */
@@ -31,6 +33,7 @@ interface ScooterStore {
   setPendingFlash: (fw: FirmwareEntry | null) => void;
   setHandshake: (h: HandshakeResult | null) => void;
   setExtendedInfo: (e: ExtendedDeviceInfo | null) => void;
+  setFlashing: (v: boolean) => void;
 }
 
 export const useScooterStore = create<ScooterStore>((set) => ({
@@ -41,6 +44,7 @@ export const useScooterStore = create<ScooterStore>((set) => ({
   telemetry: null,
   errorMessage: null,
   flashLog: [],
+  flashing: false,
   pendingFlash: null,
   handshake: null,
   extendedInfo: null,
@@ -58,4 +62,5 @@ export const useScooterStore = create<ScooterStore>((set) => ({
   setPendingFlash: (fw) => set({ pendingFlash: fw }),
   setHandshake: (h) => set({ handshake: h }),
   setExtendedInfo: (e) => set({ extendedInfo: e }),
+  setFlashing: (v) => set({ flashing: v }),
 }));

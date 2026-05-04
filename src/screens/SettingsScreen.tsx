@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScooter } from "@/hooks/use-scooter";
+import { useScooterStore } from "@/store/scooter-store";
 import { getCatalogUrl, setCatalogUrl } from "@/lib/m365/catalog";
 import {
   addTrustedSource,
@@ -84,6 +85,10 @@ export function SettingsScreen() {
   };
 
   const onPickRestoreFile = async (file: File) => {
+    if (useScooterStore.getState().flashing) {
+      toast.error("Stop flashing before restoring trusted sources");
+      return;
+    }
     try {
       const text = await file.text();
       // Dry-run parse: importTrustedSources also validates.
@@ -107,6 +112,11 @@ export function SettingsScreen() {
 
   const confirmRestore = () => {
     if (!pendingRestore) return;
+    if (useScooterStore.getState().flashing) {
+      toast.error("Stop flashing before restoring trusted sources");
+      setPendingRestore(null);
+      return;
+    }
     try {
       const result = importTrustedSources(pendingRestore.json, { replace: true });
       refreshTrusted();
