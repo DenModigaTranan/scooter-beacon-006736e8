@@ -212,6 +212,41 @@ export function SettingsScreen() {
             <Plus className="w-4 h-4 mr-2" /> ADD TRUSTED SOURCE
           </Button>
         </div>
+
+        <div className="flex gap-2 mt-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 mono tracking-widest"
+            onClick={onExportTrusted}
+            disabled={trusted.length === 0}
+          >
+            <Download className="w-4 h-4 mr-2" /> EXPORT
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 mono tracking-widest"
+            onClick={() => importInputRef.current?.click()}
+          >
+            <Upload className="w-4 h-4 mr-2" /> IMPORT
+          </Button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onImportTrustedFile(f);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+          Export saves your allowlist as JSON; import merges entries by URL
+          prefix without overwriting existing labels.
+        </p>
       </div>
 
       <div className="panel p-4">
