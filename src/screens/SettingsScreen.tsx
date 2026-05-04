@@ -36,7 +36,13 @@ export function SettingsScreen() {
   const [newPrefix, setNewPrefix] = useState("");
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  const onExportTrusted = async () => {
+  const [pendingRestore, setPendingRestore] = useState<{
+    file: File;
+    json: string;
+    incoming: number;
+  } | null>(null);
+
+  const onBackupTrusted = async () => {
     const json = exportTrustedSourcesJson();
     const filename = `scootflash-trusted-sources-${new Date()
       .toISOString()
@@ -46,16 +52,17 @@ export function SettingsScreen() {
         await Share.share({
           title: filename,
           text: json,
-          dialogTitle: "Export trusted sources",
+          dialogTitle: "Backup trusted sources",
         });
+        toast.success(`Backup ready (${trusted.length} source(s))`);
         return;
       } catch {
         try {
           await navigator.clipboard.writeText(json);
-          toast.success("Export copied to clipboard");
+          toast.success("Backup copied to clipboard");
           return;
         } catch {
-          toast.error("Export failed");
+          toast.error("Backup failed");
           return;
         }
       }
@@ -70,9 +77,48 @@ export function SettingsScreen() {
       a.click();
       a.remove();
       URL.revokeObjectURL(href);
-      toast.success(`Exported ${trusted.length} source(s)`);
+      toast.success(`Backup downloaded (${trusted.length} source(s))`);
     } catch {
-      toast.error("Export failed");
+      toast.error("Backup failed");
+    }
+  };
+
+  const onPickRestoreFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      // Dry-run parse: importTrustedSources also validates.
+      const parsed = JSON.parse(text);
+      const incoming = Array.isArray(parsed)
+        ? parsed.length
+        : Array.isArray(parsed?.sources)
+        ? parsed.sources.length
+        : 0;
+      if (incoming === 0) {
+        toast.error("Backup file contains no trusted sources");
+        return;
+      }
+      setPendingRestore({ file, json: text, incoming });
+    } catch (e) {
+      toast.error(
+        `Could not read backup: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  };
+
+  const confirmRestore = () => {
+    if (!pendingRestore) return;
+    try {
+      const result = importTrustedSources(pendingRestore.json, { replace: true });
+      refreshTrusted();
+      toast.success(
+        `Restored ${result.total} source(s) (${result.skipped} skipped)`,
+      );
+    } catch (e) {
+      toast.error(
+        `Restore failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    } finally {
+      setPendingRestore(null);
     }
   };
 
