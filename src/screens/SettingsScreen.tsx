@@ -112,6 +112,11 @@ export function SettingsScreen() {
 
   const confirmRestore = () => {
     if (!pendingRestore) return;
+    if (useScooterStore.getState().flashing) {
+      toast.error("Stop flashing before restoring trusted sources");
+      setPendingRestore(null);
+      return;
+    }
     try {
       const result = importTrustedSources(pendingRestore.json, { replace: true });
       refreshTrusted();
