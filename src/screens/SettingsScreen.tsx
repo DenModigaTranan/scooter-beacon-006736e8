@@ -24,6 +24,60 @@ export function SettingsScreen() {
   const [trusted, setTrusted] = useState<TrustedSource[]>(() => listTrustedSources());
   const [newLabel, setNewLabel] = useState("");
   const [newPrefix, setNewPrefix] = useState("");
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const onExportTrusted = async () => {
+    const json = exportTrustedSourcesJson();
+    const filename = `scootflash-trusted-sources-${new Date()
+      .toISOString()
+      .slice(0, 10)}.json`;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Share.share({
+          title: filename,
+          text: json,
+          dialogTitle: "Export trusted sources",
+        });
+        return;
+      } catch {
+        try {
+          await navigator.clipboard.writeText(json);
+          toast.success("Export copied to clipboard");
+          return;
+        } catch {
+          toast.error("Export failed");
+          return;
+        }
+      }
+    }
+    try {
+      const blob = new Blob([json], { type: "application/json" });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      toast.success(`Exported ${trusted.length} source(s)`);
+    } catch {
+      toast.error("Export failed");
+    }
+  };
+
+  const onImportTrustedFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const result = importTrustedSources(text);
+      refreshTrusted();
+      toast.success(
+        `Imported ${result.added} new, skipped ${result.skipped} (total ${result.total})`,
+      );
+    } catch (e) {
+      toast.error(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
 
   const refreshTrusted = () => setTrusted(listTrustedSources());
 
