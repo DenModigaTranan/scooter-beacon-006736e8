@@ -16,7 +16,17 @@ import { ProfilePicker } from "@/components/ProfilePicker";
 import { Share } from "@capacitor/share";
 import { Capacitor } from "@capacitor/core";
 import { toast } from "sonner";
-import { Download, Github, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
+import { Download, Github, LogOut, Plus, Save, ShieldCheck, Trash2, Upload, X } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export function SettingsScreen() {
   const { disconnect, selected, flashLog, clearLog } = useScooter();
