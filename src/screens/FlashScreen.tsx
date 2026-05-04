@@ -710,6 +710,13 @@ export function FlashScreen() {
               </div>
             )}
 
+            <TrustedSourceDebugPanel
+              url={selected?.url}
+              hashUnverified={hashUnverified}
+              match={trustedMatch}
+              sha256={selected?.sha256}
+            />
+
             {hashUnverified && !trustedMatch && (
               <div className="panel mt-3 p-4 border-destructive/50">
                 <div className="flex items-center gap-2 mb-2">
