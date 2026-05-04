@@ -84,6 +84,10 @@ export function SettingsScreen() {
   };
 
   const onPickRestoreFile = async (file: File) => {
+    if (useScooterStore.getState().flashing) {
+      toast.error("Stop flashing before restoring trusted sources");
+      return;
+    }
     try {
       const text = await file.text();
       // Dry-run parse: importTrustedSources also validates.
