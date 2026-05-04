@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScooter } from "@/hooks/use-scooter";
 import { getCatalogUrl, setCatalogUrl } from "@/lib/m365/catalog";
 import {
   addTrustedSource,
+  exportTrustedSourcesJson,
+  importTrustedSources,
   listTrustedSources,
   removeTrustedSource,
   normalisePrefix,
@@ -14,7 +16,7 @@ import { ProfilePicker } from "@/components/ProfilePicker";
 import { Share } from "@capacitor/share";
 import { Capacitor } from "@capacitor/core";
 import { toast } from "sonner";
-import { Github, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
+import { Download, Github, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
 
 export function SettingsScreen() {
   const { disconnect, selected, flashLog, clearLog } = useScooter();
@@ -22,6 +24,60 @@ export function SettingsScreen() {
   const [trusted, setTrusted] = useState<TrustedSource[]>(() => listTrustedSources());
   const [newLabel, setNewLabel] = useState("");
   const [newPrefix, setNewPrefix] = useState("");
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const onExportTrusted = async () => {
+    const json = exportTrustedSourcesJson();
+    const filename = `scootflash-trusted-sources-${new Date()
+      .toISOString()
+      .slice(0, 10)}.json`;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Share.share({
+          title: filename,
+          text: json,
+          dialogTitle: "Export trusted sources",
+        });
+        return;
+      } catch {
+        try {
+          await navigator.clipboard.writeText(json);
+          toast.success("Export copied to clipboard");
+          return;
+        } catch {
+          toast.error("Export failed");
+          return;
+        }
+      }
+    }
+    try {
+      const blob = new Blob([json], { type: "application/json" });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      toast.success(`Exported ${trusted.length} source(s)`);
+    } catch {
+      toast.error("Export failed");
+    }
+  };
+
+  const onImportTrustedFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const result = importTrustedSources(text);
+      refreshTrusted();
+      toast.success(
+        `Imported ${result.added} new, skipped ${result.skipped} (total ${result.total})`,
+      );
+    } catch (e) {
+      toast.error(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
 
   const refreshTrusted = () => setTrusted(listTrustedSources());
 
@@ -156,6 +212,41 @@ export function SettingsScreen() {
             <Plus className="w-4 h-4 mr-2" /> ADD TRUSTED SOURCE
           </Button>
         </div>
+
+        <div className="flex gap-2 mt-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 mono tracking-widest"
+            onClick={onExportTrusted}
+            disabled={trusted.length === 0}
+          >
+            <Download className="w-4 h-4 mr-2" /> EXPORT
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 mono tracking-widest"
+            onClick={() => importInputRef.current?.click()}
+          >
+            <Upload className="w-4 h-4 mr-2" /> IMPORT
+          </Button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onImportTrustedFile(f);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+          Export saves your allowlist as JSON; import merges entries by URL
+          prefix without overwriting existing labels.
+        </p>
       </div>
 
       <div className="panel p-4">

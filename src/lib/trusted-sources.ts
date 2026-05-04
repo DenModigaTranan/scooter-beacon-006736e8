@@ -126,3 +126,105 @@ export function findTrustedSource(url: string | undefined): TrustedSource | null
 export function isUrlTrusted(url: string | undefined): boolean {
   return !!findTrustedSource(url);
 }
+
+/**
+ * Versioned export envelope so future schema changes can be detected on
+ * import without silently corrupting the user's allowlist.
+ */
+export interface TrustedSourcesExport {
+  kind: "scootflash:trusted-sources";
+  version: 1;
+  exportedAt: string;
+  sources: TrustedSource[];
+}
+
+export function exportTrustedSources(): TrustedSourcesExport {
+  return {
+    kind: "scootflash:trusted-sources",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    sources: read(),
+  };
+}
+
+export function exportTrustedSourcesJson(): string {
+  return JSON.stringify(exportTrustedSources(), null, 2);
+}
+
+export interface ImportResult {
+  added: number;
+  skipped: number;
+  total: number;
+}
+
+/**
+ * Import a previously-exported allowlist. Existing entries are preserved;
+ * new ones are merged in by normalised prefix. Returns counts so the UI can
+ * surface a meaningful toast.
+ */
+export function importTrustedSources(
+  raw: string,
+  opts: { replace?: boolean } = {},
+): ImportResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Not valid JSON");
+  }
+
+  // Accept both the envelope and a bare array for forgiving imports.
+  let incoming: unknown[];
+  if (Array.isArray(parsed)) {
+    incoming = parsed;
+  } else if (
+    parsed &&
+    typeof parsed === "object" &&
+    (parsed as { kind?: string }).kind === "scootflash:trusted-sources" &&
+    Array.isArray((parsed as { sources?: unknown }).sources)
+  ) {
+    incoming = (parsed as { sources: unknown[] }).sources;
+  } else {
+    throw new Error("Unrecognised export format");
+  }
+
+  const existing = opts.replace ? [] : read();
+  const byPrefix = new Map(existing.map((s) => [s.prefix, s]));
+  let added = 0;
+  let skipped = 0;
+
+  for (const item of incoming) {
+    if (
+      !item ||
+      typeof item !== "object" ||
+      typeof (item as TrustedSource).prefix !== "string"
+    ) {
+      skipped++;
+      continue;
+    }
+    const candidate = item as Partial<TrustedSource>;
+    const norm = normalisePrefix(candidate.prefix ?? "");
+    if (!norm) {
+      skipped++;
+      continue;
+    }
+    if (byPrefix.has(norm)) {
+      skipped++;
+      continue;
+    }
+    const entry: TrustedSource = {
+      label: (candidate.label ?? "").trim() || norm,
+      prefix: norm,
+      addedAt:
+        typeof candidate.addedAt === "number" ? candidate.addedAt : Date.now(),
+    };
+    byPrefix.set(norm, entry);
+    added++;
+  }
+
+  const merged = Array.from(byPrefix.values()).sort(
+    (a, b) => b.addedAt - a.addedAt,
+  );
+  write(merged);
+  return { added, skipped, total: merged.length };
+}
