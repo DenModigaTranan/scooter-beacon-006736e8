@@ -62,4 +62,5 @@ export const useScooterStore = create<ScooterStore>((set) => ({
   setPendingFlash: (fw) => set({ pendingFlash: fw }),
   setHandshake: (h) => set({ handshake: h }),
   setExtendedInfo: (e) => set({ extendedInfo: e }),
+  setFlashing: (v) => set({ flashing: v }),
 }));
