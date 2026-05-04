@@ -1064,3 +1064,81 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+function TrustedSourceDebugPanel({
+  url,
+  hashUnverified,
+  match,
+  sha256,
+}: {
+  url: string | undefined;
+  hashUnverified: boolean;
+  match: ReturnType<typeof findTrustedSource>;
+  sha256: string | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+
+  let normalised = "—";
+  let parseError: string | null = null;
+  if (url) {
+    try {
+      const u = new URL(url);
+      normalised = `${u.protocol}//${u.host}${u.pathname}`;
+    } catch (e) {
+      parseError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  const reason = !url
+    ? "No firmware URL on the selected catalog entry."
+    : parseError
+    ? `URL failed to parse: ${parseError}`
+    : match
+    ? `URL prefix matches stored trusted source "${match.label}" (${match.prefix}).`
+    : "No stored trusted source has a prefix that matches this URL.";
+
+  const integrityState = !hashUnverified
+    ? "SHA-256 present — trusted-source check is not consulted."
+    : match
+    ? "SHA-256 missing, but trusted source matched → flashing allowed without ack."
+    : "SHA-256 missing and no trusted match → user must acknowledge risk.";
+
+  return (
+    <div className="panel mt-3 p-3 border-border/60">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground hover:text-foreground"
+      >
+        <span>Trusted-source debug</span>
+        <span className="mono text-[10px]">{open ? "HIDE" : "SHOW"}</span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-2 mono text-[11px] leading-relaxed">
+          <DebugRow label="firmware url" value={url ?? "—"} />
+          <DebugRow label="normalised" value={normalised} />
+          <DebugRow label="catalog sha256" value={sha256 ?? "—"} />
+          <DebugRow
+            label="hash state"
+            value={hashUnverified ? "missing / placeholder" : "valid 64-char hex"}
+          />
+          <DebugRow
+            label="trusted match"
+            value={match ? `${match.label} → ${match.prefix}` : "none"}
+          />
+          <DebugRow label="reason" value={reason} />
+          <DebugRow label="effect" value={integrityState} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DebugRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[9px] tracking-widest uppercase text-muted-foreground">{label}</div>
+      <div className="text-foreground break-all">{value}</div>
+    </div>
+  );
+}
