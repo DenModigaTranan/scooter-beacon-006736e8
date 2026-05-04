@@ -44,6 +44,7 @@ export const useScooterStore = create<ScooterStore>((set) => ({
   telemetry: null,
   errorMessage: null,
   flashLog: [],
+  flashing: false,
   pendingFlash: null,
   handshake: null,
   extendedInfo: null,
