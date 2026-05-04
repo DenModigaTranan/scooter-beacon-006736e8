@@ -16,7 +16,17 @@ import { ProfilePicker } from "@/components/ProfilePicker";
 import { Share } from "@capacitor/share";
 import { Capacitor } from "@capacitor/core";
 import { toast } from "sonner";
-import { Download, Github, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
+import { Download, Github, LogOut, Plus, Save, ShieldCheck, Trash2, Upload, X } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export function SettingsScreen() {
   const { disconnect, selected, flashLog, clearLog } = useScooter();
@@ -26,7 +36,13 @@ export function SettingsScreen() {
   const [newPrefix, setNewPrefix] = useState("");
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  const onExportTrusted = async () => {
+  const [pendingRestore, setPendingRestore] = useState<{
+    file: File;
+    json: string;
+    incoming: number;
+  } | null>(null);
+
+  const onBackupTrusted = async () => {
     const json = exportTrustedSourcesJson();
     const filename = `scootflash-trusted-sources-${new Date()
       .toISOString()
@@ -36,16 +52,17 @@ export function SettingsScreen() {
         await Share.share({
           title: filename,
           text: json,
-          dialogTitle: "Export trusted sources",
+          dialogTitle: "Backup trusted sources",
         });
+        toast.success(`Backup ready (${trusted.length} source(s))`);
         return;
       } catch {
         try {
           await navigator.clipboard.writeText(json);
-          toast.success("Export copied to clipboard");
+          toast.success("Backup copied to clipboard");
           return;
         } catch {
-          toast.error("Export failed");
+          toast.error("Backup failed");
           return;
         }
       }
@@ -60,9 +77,48 @@ export function SettingsScreen() {
       a.click();
       a.remove();
       URL.revokeObjectURL(href);
-      toast.success(`Exported ${trusted.length} source(s)`);
+      toast.success(`Backup downloaded (${trusted.length} source(s))`);
     } catch {
-      toast.error("Export failed");
+      toast.error("Backup failed");
+    }
+  };
+
+  const onPickRestoreFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      // Dry-run parse: importTrustedSources also validates.
+      const parsed = JSON.parse(text);
+      const incoming = Array.isArray(parsed)
+        ? parsed.length
+        : Array.isArray(parsed?.sources)
+        ? parsed.sources.length
+        : 0;
+      if (incoming === 0) {
+        toast.error("Backup file contains no trusted sources");
+        return;
+      }
+      setPendingRestore({ file, json: text, incoming });
+    } catch (e) {
+      toast.error(
+        `Could not read backup: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  };
+
+  const confirmRestore = () => {
+    if (!pendingRestore) return;
+    try {
+      const result = importTrustedSources(pendingRestore.json, { replace: true });
+      refreshTrusted();
+      toast.success(
+        `Restored ${result.total} source(s) (${result.skipped} skipped)`,
+      );
+    } catch (e) {
+      toast.error(
+        `Restore failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    } finally {
+      setPendingRestore(null);
     }
   };
 
@@ -218,10 +274,10 @@ export function SettingsScreen() {
             type="button"
             variant="outline"
             className="flex-1 mono tracking-widest"
-            onClick={onExportTrusted}
+            onClick={onBackupTrusted}
             disabled={trusted.length === 0}
           >
-            <Download className="w-4 h-4 mr-2" /> EXPORT
+            <Save className="w-4 h-4 mr-2" /> BACKUP
           </Button>
           <Button
             type="button"
@@ -229,7 +285,7 @@ export function SettingsScreen() {
             className="flex-1 mono tracking-widest"
             onClick={() => importInputRef.current?.click()}
           >
-            <Upload className="w-4 h-4 mr-2" /> IMPORT
+            <Upload className="w-4 h-4 mr-2" /> RESTORE
           </Button>
           <input
             ref={importInputRef}
@@ -238,16 +294,48 @@ export function SettingsScreen() {
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) onImportTrustedFile(f);
+              if (f) onPickRestoreFile(f);
               e.target.value = "";
             }}
           />
         </div>
         <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-          Export saves your allowlist as JSON; import merges entries by URL
-          prefix without overwriting existing labels.
+          Backup downloads your trusted sources as a JSON file. Restore
+          replaces the current allowlist with the contents of a backup file.
         </p>
       </div>
+
+      <AlertDialog
+        open={!!pendingRestore}
+        onOpenChange={(open) => !open && setPendingRestore(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="mono tracking-widest">
+              Restore trusted sources?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will replace your current{" "}
+              <span className="mono">{trusted.length}</span> trusted source(s)
+              with{" "}
+              <span className="mono">{pendingRestore?.incoming ?? 0}</span> from
+              the backup file. This cannot be undone — back up first if you
+              want to keep your existing list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="mono tracking-widest">
+              CANCEL
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRestore}
+              className="mono tracking-widest"
+            >
+              RESTORE
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="panel p-4">
         <div className="mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground mb-2">Diagnostic log</div>
