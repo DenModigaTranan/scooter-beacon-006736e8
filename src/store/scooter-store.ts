@@ -12,6 +12,8 @@ interface ScooterStore {
   telemetry: Telemetry | null;
   errorMessage: string | null;
   flashLog: string[];
+  /** True while a firmware write is actively in progress. */
+  flashing: boolean;
   /** A firmware entry queued from the Catalog screen for the Flash flow to pick up. */
   pendingFlash: FirmwareEntry | null;
   /** Latest BLE GATT handshake result, or null if not yet validated. */
