@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScooter } from "@/hooks/use-scooter";
 import { getCatalogUrl, setCatalogUrl } from "@/lib/m365/catalog";
 import {
   addTrustedSource,
+  exportTrustedSourcesJson,
+  importTrustedSources,
   listTrustedSources,
   removeTrustedSource,
   normalisePrefix,
@@ -14,7 +16,7 @@ import { ProfilePicker } from "@/components/ProfilePicker";
 import { Share } from "@capacitor/share";
 import { Capacitor } from "@capacitor/core";
 import { toast } from "sonner";
-import { Github, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
+import { Download, Github, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
 
 export function SettingsScreen() {
   const { disconnect, selected, flashLog, clearLog } = useScooter();
