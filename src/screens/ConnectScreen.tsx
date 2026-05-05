@@ -94,6 +94,29 @@ export function ConnectScreen() {
             </div>
           </div>
 
+          {mismatch && (
+            <div className="panel border-primary-glow/40 bg-primary/5 p-3 mb-3 flex items-start gap-2.5 animate-fade-in">
+              <Sparkles className="w-4 h-4 text-primary-glow shrink-0 mt-0.5" />
+              <div className="text-xs leading-relaxed flex-1">
+                <div className="mono tracking-widest uppercase text-primary-glow">
+                  {detectChipLabel(mismatch.result)} detected
+                </div>
+                <div className="text-muted-foreground mt-1">
+                  "{mismatch.deviceName}" looks like a {detectChipLabel(mismatch.result)} scooter — your active profile is {activeProfile ? getProfileMeta(activeProfile).shortLabel : "none"}.
+                </div>
+                <button
+                  onClick={() => {
+                    setProfile(mismatch.result.profile);
+                    toast.success(`Switched to ${getProfileMeta(mismatch.result.profile).label}`);
+                  }}
+                  className="mono text-[11px] tracking-widest uppercase text-primary-glow hover:underline mt-2"
+                >
+                  Switch profile →
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2.5">
             {devices.length === 0 && state !== "scanning" && (
               <div className="panel p-6 text-center text-sm text-muted-foreground">
