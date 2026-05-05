@@ -147,7 +147,18 @@ export function ConnectScreen() {
                       <Bluetooth className="w-5 h-5 text-primary-glow" />
                     </div>
                     <div className="min-w-0">
-                      <div className="mono text-sm truncate">{d.name}</div>
+                      <div className="mono text-sm truncate flex items-center gap-2">
+                        <span className="truncate">{d.name}</span>
+                        {(() => {
+                          const det = detections.get(d.deviceId);
+                          if (!det) return null;
+                          return (
+                            <span className="chip text-[9px] tracking-[0.18em] text-primary-glow shrink-0">
+                              {detectChipLabel(det)}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <div className="mono text-[10px] text-muted-foreground tracking-widest">
                         {d.deviceId.slice(0, 17).toUpperCase()}
                       </div>
