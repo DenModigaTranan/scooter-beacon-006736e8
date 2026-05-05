@@ -74,10 +74,18 @@ const Index = () => {
       <HeaderBar
         title={titles[tab]}
         profileLabel={profileLabel}
-        right={<StatusBadge state={state} />}
+        right={
+          <div className="flex items-center gap-1.5">
+            <CompatibilityBadge profile={profile} deviceName={selected?.name} />
+            <StatusBadge state={state} />
+          </div>
+        }
       />
       <main className="max-w-md mx-auto">
         <ProfileBanner />
+        <div className="px-4 pt-4 max-w-md mx-auto">
+          <CompatibilityBadge profile={profile} deviceName={selected?.name} variant="full" />
+        </div>
         {tab === "dashboard" && <DashboardScreen />}
         {tab === "info" && <InfoScreen />}
         {tab === "catalog" && <CatalogScreen onPickToFlash={() => setTab("flash")} />}
