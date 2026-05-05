@@ -1,10 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Bluetooth, Loader2, RefreshCw, Signal } from "lucide-react";
+import { Bluetooth, Loader2, RefreshCw, Signal, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useScooter } from "@/hooks/use-scooter";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PairedScooters } from "@/components/PairedScooters";
+import { detectProfile, detectChipLabel } from "@/lib/profile-detect";
+import { setProfile, useProfile, getProfileMeta } from "@/lib/profile";
+import { toast } from "sonner";
 
 function rssiBars(rssi: number) {
   if (rssi >= -55) return 4;
