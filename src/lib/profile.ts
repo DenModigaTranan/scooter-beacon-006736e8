@@ -49,12 +49,20 @@ export const PROFILES: ProfileMeta[] = [
     status: "supported",
   },
   {
-    key: "ninebot",
-    label: "Ninebot / Segway",
-    shortLabel: "Ninebot",
+    key: "ewheels",
+    label: "E-wheels",
+    shortLabel: "E-wheels",
     description:
-      "ES1–ES4, Max G30 / G30D / G30LP / G30P / G2, F20–F40, F2 / Plus / Pro, E22 / E25 / E45, D-series, GT1 / GT2.",
-    status: "coming-soon",
+      "E-wheels (Nordic rebadged Ninebot platform) — Max-class, ES-class and similar models. Uses the Ninebot BLE stack.",
+    status: "supported",
+  },
+  {
+    key: "ewa",
+    label: "EWA",
+    shortLabel: "EWA",
+    description:
+      "EWA scooters built on the Ninebot platform. Uses the Ninebot BLE stack for telemetry and controls.",
+    status: "supported",
   },
   {
     key: "generic-ble",
@@ -68,11 +76,19 @@ export const PROFILES: ProfileMeta[] = [
 const STORAGE_KEY = "scootflash:profile";
 const CHANGE_EVENT = "scootflash:profile-changed";
 
+const VALID_PROFILES: ScooterProfile[] = [
+  "xiaomi-m365",
+  "ninebot",
+  "ewheels",
+  "ewa",
+  "generic-ble",
+];
+
 /** Read the saved profile, or `null` if the user hasn't picked one yet. */
 export function getProfile(): ScooterProfile | null {
   if (typeof localStorage === "undefined") return null;
-  const v = localStorage.getItem(STORAGE_KEY);
-  if (v === "xiaomi-m365" || v === "ninebot" || v === "generic-ble") return v;
+  const v = localStorage.getItem(STORAGE_KEY) as ScooterProfile | null;
+  if (v && VALID_PROFILES.includes(v)) return v;
   return null;
 }
 
