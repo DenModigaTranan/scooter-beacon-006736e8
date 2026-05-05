@@ -18,6 +18,29 @@ function rssiBars(rssi: number) {
 
 export function ConnectScreen() {
   const { state, devices, scan, connect, isNative, errorMessage, selected, handshake } = useScooter();
+  const [activeProfile] = useProfile();
+
+  // Best-guess profile per device, computed once per scan list.
+  const detections = useMemo(() => {
+    const out = new Map<string, ReturnType<typeof detectProfile>>();
+    for (const d of devices) out.set(d.deviceId, detectProfile({ name: d.name }));
+    return out;
+  }, [devices]);
+
+  // Highest-confidence detection that disagrees with the active profile —
+  // used to render a "switch profile?" banner.
+  const mismatch = useMemo(() => {
+    const order = { high: 3, medium: 2, low: 1 } as const;
+    let best: { result: NonNullable<ReturnType<typeof detectProfile>>; deviceName: string } | null = null;
+    for (const d of devices) {
+      const r = detections.get(d.deviceId);
+      if (!r || r.profile === activeProfile) continue;
+      if (!best || order[r.confidence] > order[best.result.confidence]) {
+        best = { result: r, deviceName: d.name };
+      }
+    }
+    return best;
+  }, [devices, detections, activeProfile]);
 
   useEffect(() => {
     if (state === "idle" && devices.length === 0) scan();
