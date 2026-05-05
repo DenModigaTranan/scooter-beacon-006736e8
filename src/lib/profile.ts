@@ -8,7 +8,28 @@
 
 import { useEffect, useState } from "react";
 
-export type ScooterProfile = "xiaomi-m365" | "ninebot" | "generic-ble";
+export type ScooterProfile =
+  | "xiaomi-m365"
+  | "ninebot"
+  | "ewheels"
+  | "ewa"
+  | "generic-ble";
+
+/**
+ * Profiles that ride on the Ninebot BLE protocol stack. E-wheels and EWA
+ * scooters are commonly Ninebot-platform rebadges (especially the Max G30
+ * and ES-series derivatives sold under those Nordic brand names), so they
+ * route through the Ninebot screen and session.
+ */
+export const NINEBOT_COMPATIBLE_PROFILES: ScooterProfile[] = [
+  "ninebot",
+  "ewheels",
+  "ewa",
+];
+
+export function isNinebotCompatible(p: ScooterProfile | null): boolean {
+  return p !== null && NINEBOT_COMPATIBLE_PROFILES.includes(p);
+}
 
 export interface ProfileMeta {
   key: ScooterProfile;
