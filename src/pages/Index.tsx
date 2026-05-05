@@ -26,7 +26,7 @@ const titles: Record<TabKey, string> = {
 
 const Index = () => {
   const { accepted, accept } = useDisclaimerAccepted();
-  const { state } = useScooter();
+  const { state, selected } = useScooter();
   const [profile] = useProfile();
   const [tab, setTab] = useState<TabKey>("dashboard");
   // Local force-render trigger after picking a profile (the hook also picks it
