@@ -49,6 +49,14 @@ export const PROFILES: ProfileMeta[] = [
     status: "supported",
   },
   {
+    key: "ninebot",
+    label: "Ninebot / Segway",
+    shortLabel: "Ninebot",
+    description:
+      "ES1–ES4, Max G30 / G30D / G30LP / G30P / G2, F20–F40, F2 / Plus / Pro, E22 / E25 / E45, D-series, GT1 / GT2.",
+    status: "supported",
+  },
+  {
     key: "ewheels",
     label: "E-wheels",
     shortLabel: "E-wheels",
