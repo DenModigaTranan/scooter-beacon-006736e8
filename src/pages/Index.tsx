@@ -50,6 +50,20 @@ const Index = () => {
     );
   }
 
+  // Ninebot, E-wheels and EWA all share the Ninebot BLE stack — route them
+  // through the dedicated Ninebot screen which owns its own scan/connect flow.
+  if (isNinebotCompatible(profile)) {
+    const profileLabel = getProfileMeta(profile).shortLabel;
+    return (
+      <div className="min-h-screen pb-6">
+        <HeaderBar title={`${profileLabel} Scooter`} profileLabel={profileLabel} />
+        <main className="max-w-md mx-auto">
+          <NinebotScreen />
+        </main>
+      </div>
+    );
+  }
+
   if (state !== "connected") return <ConnectScreen />;
 
   const profileLabel = getProfileMeta(profile).shortLabel;
