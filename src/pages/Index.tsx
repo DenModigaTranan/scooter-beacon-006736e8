@@ -13,6 +13,7 @@ import NinebotScreen from "@/screens/NinebotScreen";
 import { HeaderBar, TabBar, type TabKey } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProfileBanner } from "@/components/ProfileBanner";
+import { CompatibilityBadge } from "@/components/CompatibilityBadge";
 import { getProfileMeta, isNinebotCompatible, useProfile } from "@/lib/profile";
 
 const titles: Record<TabKey, string> = {
@@ -25,7 +26,7 @@ const titles: Record<TabKey, string> = {
 
 const Index = () => {
   const { accepted, accept } = useDisclaimerAccepted();
-  const { state } = useScooter();
+  const { state, selected } = useScooter();
   const [profile] = useProfile();
   const [tab, setTab] = useState<TabKey>("dashboard");
   // Local force-render trigger after picking a profile (the hook also picks it
@@ -73,10 +74,18 @@ const Index = () => {
       <HeaderBar
         title={titles[tab]}
         profileLabel={profileLabel}
-        right={<StatusBadge state={state} />}
+        right={
+          <div className="flex items-center gap-1.5">
+            <CompatibilityBadge profile={profile} deviceName={selected?.name} />
+            <StatusBadge state={state} />
+          </div>
+        }
       />
       <main className="max-w-md mx-auto">
         <ProfileBanner />
+        <div className="px-4 pt-4 max-w-md mx-auto">
+          <CompatibilityBadge profile={profile} deviceName={selected?.name} variant="full" />
+        </div>
         {tab === "dashboard" && <DashboardScreen />}
         {tab === "info" && <InfoScreen />}
         {tab === "catalog" && <CatalogScreen onPickToFlash={() => setTab("flash")} />}
