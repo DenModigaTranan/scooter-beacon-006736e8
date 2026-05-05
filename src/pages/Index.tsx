@@ -9,10 +9,11 @@ import { SettingsScreen } from "@/screens/SettingsScreen";
 import { DisclaimerScreen, useDisclaimerAccepted } from "@/screens/DisclaimerScreen";
 import { ProfileSelectScreen } from "@/screens/ProfileSelectScreen";
 import { GenericBleScreen } from "@/screens/GenericBleScreen";
+import NinebotScreen from "@/screens/NinebotScreen";
 import { HeaderBar, TabBar, type TabKey } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProfileBanner } from "@/components/ProfileBanner";
-import { getProfileMeta, useProfile } from "@/lib/profile";
+import { getProfileMeta, isNinebotCompatible, useProfile } from "@/lib/profile";
 
 const titles: Record<TabKey, string> = {
   dashboard: "Dashboard",
@@ -44,6 +45,20 @@ const Index = () => {
         <HeaderBar title="Generic BLE" profileLabel={profileLabel} />
         <main className="max-w-md mx-auto">
           <GenericBleScreen />
+        </main>
+      </div>
+    );
+  }
+
+  // Ninebot, E-wheels and EWA all share the Ninebot BLE stack — route them
+  // through the dedicated Ninebot screen which owns its own scan/connect flow.
+  if (isNinebotCompatible(profile)) {
+    const profileLabel = getProfileMeta(profile).shortLabel;
+    return (
+      <div className="min-h-screen pb-6">
+        <HeaderBar title={`${profileLabel} Scooter`} profileLabel={profileLabel} />
+        <main className="max-w-md mx-auto">
+          <NinebotScreen />
         </main>
       </div>
     );
