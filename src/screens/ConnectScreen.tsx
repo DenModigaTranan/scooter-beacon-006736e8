@@ -1,10 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Bluetooth, Loader2, RefreshCw, Signal } from "lucide-react";
+import { Bluetooth, Loader2, RefreshCw, Signal, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useScooter } from "@/hooks/use-scooter";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PairedScooters } from "@/components/PairedScooters";
+import { detectProfile, detectChipLabel } from "@/lib/profile-detect";
+import { setProfile, useProfile, getProfileMeta } from "@/lib/profile";
+import { toast } from "sonner";
 
 function rssiBars(rssi: number) {
   if (rssi >= -55) return 4;
@@ -15,6 +18,29 @@ function rssiBars(rssi: number) {
 
 export function ConnectScreen() {
   const { state, devices, scan, connect, isNative, errorMessage, selected, handshake } = useScooter();
+  const [activeProfile] = useProfile();
+
+  // Best-guess profile per device, computed once per scan list.
+  const detections = useMemo(() => {
+    const out = new Map<string, ReturnType<typeof detectProfile>>();
+    for (const d of devices) out.set(d.deviceId, detectProfile({ name: d.name }));
+    return out;
+  }, [devices]);
+
+  // Highest-confidence detection that disagrees with the active profile —
+  // used to render a "switch profile?" banner.
+  const mismatch = useMemo(() => {
+    const order = { high: 3, medium: 2, low: 1 } as const;
+    let best: { result: NonNullable<ReturnType<typeof detectProfile>>; deviceName: string } | null = null;
+    for (const d of devices) {
+      const r = detections.get(d.deviceId);
+      if (!r || r.profile === activeProfile) continue;
+      if (!best || order[r.confidence] > order[best.result.confidence]) {
+        best = { result: r, deviceName: d.name };
+      }
+    }
+    return best;
+  }, [devices, detections, activeProfile]);
 
   useEffect(() => {
     if (state === "idle" && devices.length === 0) scan();
@@ -68,6 +94,29 @@ export function ConnectScreen() {
             </div>
           </div>
 
+          {mismatch && (
+            <div className="panel border-primary-glow/40 bg-primary/5 p-3 mb-3 flex items-start gap-2.5 animate-fade-in">
+              <Sparkles className="w-4 h-4 text-primary-glow shrink-0 mt-0.5" />
+              <div className="text-xs leading-relaxed flex-1">
+                <div className="mono tracking-widest uppercase text-primary-glow">
+                  {detectChipLabel(mismatch.result)} detected
+                </div>
+                <div className="text-muted-foreground mt-1">
+                  "{mismatch.deviceName}" looks like a {detectChipLabel(mismatch.result)} scooter — your active profile is {activeProfile ? getProfileMeta(activeProfile).shortLabel : "none"}.
+                </div>
+                <button
+                  onClick={() => {
+                    setProfile(mismatch.result.profile);
+                    toast.success(`Switched to ${getProfileMeta(mismatch.result.profile).label}`);
+                  }}
+                  className="mono text-[11px] tracking-widest uppercase text-primary-glow hover:underline mt-2"
+                >
+                  Switch profile →
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2.5">
             {devices.length === 0 && state !== "scanning" && (
               <div className="panel p-6 text-center text-sm text-muted-foreground">
@@ -98,7 +147,18 @@ export function ConnectScreen() {
                       <Bluetooth className="w-5 h-5 text-primary-glow" />
                     </div>
                     <div className="min-w-0">
-                      <div className="mono text-sm truncate">{d.name}</div>
+                      <div className="mono text-sm truncate flex items-center gap-2">
+                        <span className="truncate">{d.name}</span>
+                        {(() => {
+                          const det = detections.get(d.deviceId);
+                          if (!det) return null;
+                          return (
+                            <span className="chip text-[9px] tracking-[0.18em] text-primary-glow shrink-0">
+                              {detectChipLabel(det)}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <div className="mono text-[10px] text-muted-foreground tracking-widest">
                         {d.deviceId.slice(0, 17).toUpperCase()}
                       </div>
