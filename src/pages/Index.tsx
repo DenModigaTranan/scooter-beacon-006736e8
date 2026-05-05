@@ -13,6 +13,7 @@ import NinebotScreen from "@/screens/NinebotScreen";
 import { HeaderBar, TabBar, type TabKey } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProfileBanner } from "@/components/ProfileBanner";
+import { CompatibilityBadge } from "@/components/CompatibilityBadge";
 import { getProfileMeta, isNinebotCompatible, useProfile } from "@/lib/profile";
 
 const titles: Record<TabKey, string> = {
