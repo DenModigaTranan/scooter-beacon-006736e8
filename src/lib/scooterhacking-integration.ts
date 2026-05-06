@@ -1,38 +1,35 @@
-import { ScooterHacking } from 'scooterhacking-protocol';
+/**
+ * Placeholder integration module for the (unpublished) `scooterhacking-protocol`
+ * library. The real package isn't installed, so this file just defines the
+ * surface area we'll eventually implement against. Methods throw until wired
+ * up to a concrete protocol implementation.
+ */
 
-// Define TypeScript types for frame encoding
 interface FrameEncoding {
-    // Define properties and methods for frame encoding
+  bytes: Uint8Array;
 }
 
-// Define TypeScript types for authentication handshakes
 interface AuthHandshake {
-    // Define properties and methods for authentication handshakes
+  ok: boolean;
+  reason?: string;
 }
 
-// Define TypeScript types for firmware update protocols
 interface FirmwareUpdate {
-    // Define properties and methods for firmware update protocols
+  version: string;
+  started: boolean;
 }
 
-// Create a class that wraps the ScooterHacking library
 export class ScooterHackingIntegration {
-    private scooterHacking: ScooterHacking;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  public encodeFrame(_data: unknown): FrameEncoding {
+    throw new Error("ScooterHackingIntegration.encodeFrame: not implemented");
+  }
 
-    constructor() {
-        this.scooterHacking = new ScooterHacking();
-    }
+  public authenticate(): AuthHandshake {
+    throw new Error("ScooterHackingIntegration.authenticate: not implemented");
+  }
 
-    // Implement methods using the defined types
-    public encodeFrame(data: any): FrameEncoding {
-        // Implementation details...
-    }
-
-    public authenticate(): AuthHandshake {
-        // Implementation details...
-    }
-
-    public updateFirmware(version: string): FirmwareUpdate {
-        // Implementation details...
-    }
+  public updateFirmware(_version: string): FirmwareUpdate {
+    throw new Error("ScooterHackingIntegration.updateFirmware: not implemented");
+  }
 }
