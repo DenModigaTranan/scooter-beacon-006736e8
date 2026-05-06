@@ -74,8 +74,8 @@ function evaluate(
   };
 }
 
-export function CompatibilityBadge({ profile, deviceName, variant = "compact", className }: Props) {
-  const { status, detectedProfile, reason } = evaluate(profile, deviceName);
+export function CompatibilityBadge({ profile, deviceName, serviceUuids, manufacturerIds, variant = "compact", className }: Props) {
+  const { status, detectedProfile, reason } = evaluate(profile, deviceName, serviceUuids, manufacturerIds);
 
   if (status === "no-device" && variant === "compact") return null;
 
@@ -130,12 +130,12 @@ export function CompatibilityBadge({ profile, deviceName, variant = "compact", c
         <div className="text-muted-foreground mt-1">
           {status === "match" && profile && (
             <>
-              "{deviceName}" looks like a {detectedProfile ? detectChipLabel({ profile: detectedProfile, confidence: "high", reasons: [] }) : "?"} device — matches active profile <span className="text-foreground">{getProfileMeta(profile).shortLabel}</span>.
+              "{deviceName}" looks like a {detectedProfile ? detectChipLabel({ profile: detectedProfile, confidence: "high", reasons: [], score: 0 }) : "?"} device — matches active profile <span className="text-foreground">{getProfileMeta(profile).shortLabel}</span>.
             </>
           )}
           {status === "mismatch" && profile && detectedProfile && (
             <>
-              "{deviceName}" looks like a {detectChipLabel({ profile: detectedProfile, confidence: "high", reasons: [] })} device, but your active profile is <span className="text-foreground">{getProfileMeta(profile).shortLabel}</span>. Flashing or live controls may fail.
+              "{deviceName}" looks like a {detectChipLabel({ profile: detectedProfile, confidence: "high", reasons: [], score: 0 })} device, but your active profile is <span className="text-foreground">{getProfileMeta(profile).shortLabel}</span>. Flashing or live controls may fail.
             </>
           )}
           {status === "unknown" && <>{reason}. Proceed with caution.</>}
