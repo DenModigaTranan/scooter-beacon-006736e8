@@ -27,6 +27,10 @@ export interface DiscoveredDevice {
   deviceId: string;
   name: string;
   rssi: number;
+  /** Lowercased 128-bit service UUIDs seen in the advertisement. */
+  serviceUuids?: string[];
+  /** 16-bit manufacturer (company) IDs seen in the advertisement. */
+  manufacturerIds?: number[];
   mock?: boolean;
 }
 
@@ -184,9 +188,11 @@ export class ScooterService {
   async scan(onResult: (d: DiscoveredDevice) => void, durationMs = 6000): Promise<void> {
     if (!isNative()) {
       // Mock devices for web preview
-      setTimeout(() => onResult({ deviceId: "mock-m365", name: "MIScooter4321", rssi: -52, mock: true }), 300);
-      setTimeout(() => onResult({ deviceId: "mock-pro", name: "MIScooterPro8821", rssi: -68, mock: true }), 900);
-      setTimeout(() => onResult({ deviceId: "mock-1s", name: "MIScooter1S2244", rssi: -74, mock: true }), 1700);
+      const mockServices = ["0000fe95-0000-1000-8000-00805f9b34fb"];
+      const mockMfg = [0x038f];
+      setTimeout(() => onResult({ deviceId: "mock-m365", name: "MIScooter4321", rssi: -52, serviceUuids: mockServices, manufacturerIds: mockMfg, mock: true }), 300);
+      setTimeout(() => onResult({ deviceId: "mock-pro", name: "MIScooterPro8821", rssi: -68, serviceUuids: mockServices, manufacturerIds: mockMfg, mock: true }), 900);
+      setTimeout(() => onResult({ deviceId: "mock-1s", name: "MIScooter1S2244", rssi: -74, serviceUuids: mockServices, manufacturerIds: mockMfg, mock: true }), 1700);
       return;
     }
     await BleClient.requestLEScan(
@@ -194,7 +200,14 @@ export class ScooterService {
       (r: ScanResult) => {
         const name = r.device.name ?? r.localName ?? "Unknown";
         if (!/MISc?ooter/i.test(name) && !name.startsWith("MI")) return;
-        onResult({ deviceId: r.device.deviceId, name, rssi: r.rssi ?? -100 });
+        const ad = r.manufacturerData ?? {};
+        onResult({
+          deviceId: r.device.deviceId,
+          name,
+          rssi: r.rssi ?? -100,
+          serviceUuids: (r.uuids ?? []).map((u) => u.toLowerCase()),
+          manufacturerIds: Object.keys(ad).map((k) => Number(k)).filter((n) => !Number.isNaN(n)),
+        });
       }
     );
     setTimeout(() => BleClient.stopLEScan().catch(() => {}), durationMs);
