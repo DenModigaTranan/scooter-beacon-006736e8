@@ -24,6 +24,10 @@ import { cn } from "@/lib/utils";
 interface Props {
   profile: ScooterProfile | null;
   deviceName: string | null | undefined;
+  /** Service UUIDs from the advert, if known. Improves detection accuracy. */
+  serviceUuids?: string[];
+  /** Manufacturer (company) IDs from the advert, if known. */
+  manufacturerIds?: number[];
   /** Compact = chip-only (for header). Full = chip + reason (for panels). */
   variant?: "compact" | "full";
   className?: string;
@@ -34,6 +38,8 @@ type Status = "match" | "mismatch" | "unknown" | "no-device";
 function evaluate(
   profile: ScooterProfile | null,
   deviceName: string | null | undefined,
+  serviceUuids: string[] | undefined,
+  manufacturerIds: number[] | undefined,
 ): { status: Status; detectedProfile: ScooterProfile | null; reason: string } {
   if (!deviceName) {
     return { status: "no-device", detectedProfile: null, reason: "No device connected" };
@@ -41,7 +47,7 @@ function evaluate(
   if (!profile) {
     return { status: "unknown", detectedProfile: null, reason: "No active profile" };
   }
-  const det = detectProfile({ name: deviceName });
+  const det = detectProfile({ name: deviceName, serviceUuids, manufacturerIds });
   if (!det) {
     return {
       status: "unknown",
@@ -58,18 +64,18 @@ function evaluate(
     return {
       status: "match",
       detectedProfile: det.profile,
-      reason: det.reasons[0] ?? "name pattern matched",
+      reason: det.reasons[0] ?? "advertisement matched",
     };
   }
   return {
     status: "mismatch",
     detectedProfile: det.profile,
-    reason: det.reasons[0] ?? "name pattern matched",
+    reason: det.reasons[0] ?? "advertisement matched",
   };
 }
 
-export function CompatibilityBadge({ profile, deviceName, variant = "compact", className }: Props) {
-  const { status, detectedProfile, reason } = evaluate(profile, deviceName);
+export function CompatibilityBadge({ profile, deviceName, serviceUuids, manufacturerIds, variant = "compact", className }: Props) {
+  const { status, detectedProfile, reason } = evaluate(profile, deviceName, serviceUuids, manufacturerIds);
 
   if (status === "no-device" && variant === "compact") return null;
 
@@ -124,12 +130,12 @@ export function CompatibilityBadge({ profile, deviceName, variant = "compact", c
         <div className="text-muted-foreground mt-1">
           {status === "match" && profile && (
             <>
-              "{deviceName}" looks like a {detectedProfile ? detectChipLabel({ profile: detectedProfile, confidence: "high", reasons: [] }) : "?"} device — matches active profile <span className="text-foreground">{getProfileMeta(profile).shortLabel}</span>.
+              "{deviceName}" looks like a {detectedProfile ? detectChipLabel({ profile: detectedProfile, confidence: "high", reasons: [], score: 0 }) : "?"} device — matches active profile <span className="text-foreground">{getProfileMeta(profile).shortLabel}</span>.
             </>
           )}
           {status === "mismatch" && profile && detectedProfile && (
             <>
-              "{deviceName}" looks like a {detectChipLabel({ profile: detectedProfile, confidence: "high", reasons: [] })} device, but your active profile is <span className="text-foreground">{getProfileMeta(profile).shortLabel}</span>. Flashing or live controls may fail.
+              "{deviceName}" looks like a {detectChipLabel({ profile: detectedProfile, confidence: "high", reasons: [], score: 0 })} device, but your active profile is <span className="text-foreground">{getProfileMeta(profile).shortLabel}</span>. Flashing or live controls may fail.
             </>
           )}
           {status === "unknown" && <>{reason}. Proceed with caution.</>}
