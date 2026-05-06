@@ -5,6 +5,7 @@ import { scooter } from "@/lib/m365/scooter-service";
 import { useScooterStore } from "@/store/scooter-store";
 import type { DiscoveredDevice } from "@/lib/m365/scooter-service";
 import { upsertPairedProfile } from "@/lib/paired-profiles";
+import { discoverServiceUuids } from "@/lib/gatt-discover";
 
 const haptic = async (style: ImpactStyle = ImpactStyle.Light) => {
   if (!Capacitor.isNativePlatform()) return;
