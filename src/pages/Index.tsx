@@ -76,7 +76,7 @@ const Index = () => {
         profileLabel={profileLabel}
         right={
           <div className="flex items-center gap-1.5">
-            <CompatibilityBadge profile={profile} deviceName={selected?.name} />
+            <CompatibilityBadge profile={profile} deviceName={selected?.name} serviceUuids={selected?.serviceUuids} manufacturerIds={selected?.manufacturerIds} />
             <StatusBadge state={state} />
           </div>
         }
@@ -84,7 +84,7 @@ const Index = () => {
       <main className="max-w-md mx-auto">
         <ProfileBanner />
         <div className="px-4 pt-4 max-w-md mx-auto">
-          <CompatibilityBadge profile={profile} deviceName={selected?.name} variant="full" />
+          <CompatibilityBadge profile={profile} deviceName={selected?.name} serviceUuids={selected?.serviceUuids} manufacturerIds={selected?.manufacturerIds} variant="full" />
         </div>
         {tab === "dashboard" && <DashboardScreen />}
         {tab === "info" && <InfoScreen />}

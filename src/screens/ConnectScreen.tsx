@@ -20,10 +20,16 @@ export function ConnectScreen() {
   const { state, devices, scan, connect, isNative, errorMessage, selected, handshake } = useScooter();
   const [activeProfile] = useProfile();
 
-  // Best-guess profile per device, computed once per scan list.
+  // Best-guess profile per device, computed once per scan list. Uses
+  // advertised service UUIDs and manufacturer IDs alongside the local name.
   const detections = useMemo(() => {
     const out = new Map<string, ReturnType<typeof detectProfile>>();
-    for (const d of devices) out.set(d.deviceId, detectProfile({ name: d.name }));
+    for (const d of devices) {
+      out.set(
+        d.deviceId,
+        detectProfile({ name: d.name, serviceUuids: d.serviceUuids, manufacturerIds: d.manufacturerIds }),
+      );
+    }
     return out;
   }, [devices]);
 
