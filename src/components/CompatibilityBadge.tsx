@@ -24,6 +24,10 @@ import { cn } from "@/lib/utils";
 interface Props {
   profile: ScooterProfile | null;
   deviceName: string | null | undefined;
+  /** Service UUIDs from the advert, if known. Improves detection accuracy. */
+  serviceUuids?: string[];
+  /** Manufacturer (company) IDs from the advert, if known. */
+  manufacturerIds?: number[];
   /** Compact = chip-only (for header). Full = chip + reason (for panels). */
   variant?: "compact" | "full";
   className?: string;
@@ -34,6 +38,8 @@ type Status = "match" | "mismatch" | "unknown" | "no-device";
 function evaluate(
   profile: ScooterProfile | null,
   deviceName: string | null | undefined,
+  serviceUuids: string[] | undefined,
+  manufacturerIds: number[] | undefined,
 ): { status: Status; detectedProfile: ScooterProfile | null; reason: string } {
   if (!deviceName) {
     return { status: "no-device", detectedProfile: null, reason: "No device connected" };
@@ -41,7 +47,7 @@ function evaluate(
   if (!profile) {
     return { status: "unknown", detectedProfile: null, reason: "No active profile" };
   }
-  const det = detectProfile({ name: deviceName });
+  const det = detectProfile({ name: deviceName, serviceUuids, manufacturerIds });
   if (!det) {
     return {
       status: "unknown",
@@ -58,13 +64,13 @@ function evaluate(
     return {
       status: "match",
       detectedProfile: det.profile,
-      reason: det.reasons[0] ?? "name pattern matched",
+      reason: det.reasons[0] ?? "advertisement matched",
     };
   }
   return {
     status: "mismatch",
     detectedProfile: det.profile,
-    reason: det.reasons[0] ?? "name pattern matched",
+    reason: det.reasons[0] ?? "advertisement matched",
   };
 }
 
