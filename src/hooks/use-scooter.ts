@@ -49,6 +49,18 @@ export function useScooter() {
       await haptic(ImpactStyle.Medium);
       store.setState("connected");
 
+      // Augment the device record with GATT-discovered service UUIDs. Many
+      // peripherals (especially Ninebot/EWA/E-wheels rebadges) don't list
+      // their primary service in the scan advertisement, so this fallback
+      // gives CompatibilityBadge & profile detection a much stronger signal
+      // than the BLE name alone.
+      const gattUuids = await discoverServiceUuids(device.deviceId);
+      if (gattUuids.length) {
+        const advUuids = device.serviceUuids ?? [];
+        const merged = Array.from(new Set([...advUuids, ...gattUuids]));
+        store.setSelected({ ...device, serviceUuids: merged });
+      }
+
       // Validate the GATT layout BEFORE any read/write so we never talk
       // M365 protocol to a non-M365 peripheral that just happens to advertise
       // a similar name.
