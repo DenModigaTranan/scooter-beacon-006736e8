@@ -29,6 +29,8 @@ export interface DiscoveredDevice {
   rssi: number;
   /** Lowercased 128-bit service UUIDs seen in the advertisement. */
   serviceUuids?: string[];
+  /** Service UUIDs discovered post-connect via GATT (lowercased). */
+  gattServiceUuids?: string[];
   /** 16-bit manufacturer (company) IDs seen in the advertisement. */
   manufacturerIds?: number[];
   mock?: boolean;
