@@ -2,22 +2,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
 // --- Mocks (hoisted) ---------------------------------------------------------
-const discoverMock = vi.fn();
+const { discoverMock, scooterMock } = vi.hoisted(() => ({
+  discoverMock: vi.fn(),
+  scooterMock: {
+    initialize: vi.fn().mockResolvedValue(undefined),
+    scan: vi.fn(),
+    connect: vi.fn().mockResolvedValue(undefined),
+    disconnect: vi.fn().mockResolvedValue(undefined),
+    handshake: vi.fn().mockResolvedValue({ ok: false, reason: "stop-here-for-test" }),
+    readInfo: vi.fn(),
+    pollTelemetry: vi.fn(),
+    writeSerialAndVerify: vi.fn(),
+    readExtendedInfo: vi.fn(),
+  },
+}));
 vi.mock("@/lib/gatt-discover", () => ({
   discoverServiceUuids: (...a: unknown[]) => discoverMock(...a),
 }));
-
-const scooterMock = {
-  initialize: vi.fn().mockResolvedValue(undefined),
-  scan: vi.fn(),
-  connect: vi.fn().mockResolvedValue(undefined),
-  disconnect: vi.fn().mockResolvedValue(undefined),
-  handshake: vi.fn().mockResolvedValue({ ok: false, reason: "stop-here-for-test" }),
-  readInfo: vi.fn(),
-  pollTelemetry: vi.fn(),
-  writeSerialAndVerify: vi.fn(),
-  readExtendedInfo: vi.fn(),
-};
 vi.mock("@/lib/m365/scooter-service", () => ({ scooter: scooterMock }));
 
 vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => false } }));
