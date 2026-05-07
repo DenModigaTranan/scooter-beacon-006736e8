@@ -76,7 +76,7 @@ const Index = () => {
         profileLabel={profileLabel}
         right={
           <div className="flex items-center gap-1.5">
-            <CompatibilityBadge profile={profile} deviceName={selected?.name} serviceUuids={selected?.serviceUuids} manufacturerIds={selected?.manufacturerIds} />
+            <CompatibilityBadge profile={profile} deviceName={selected?.name} serviceUuids={selected?.serviceUuids} gattServiceUuids={selected?.gattServiceUuids} manufacturerIds={selected?.manufacturerIds} />
             <StatusBadge state={state} />
           </div>
         }
