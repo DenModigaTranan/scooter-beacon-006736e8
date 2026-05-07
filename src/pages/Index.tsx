@@ -84,7 +84,7 @@ const Index = () => {
       <main className="max-w-md mx-auto">
         <ProfileBanner />
         <div className="px-4 pt-4 max-w-md mx-auto">
-          <CompatibilityBadge profile={profile} deviceName={selected?.name} serviceUuids={selected?.serviceUuids} manufacturerIds={selected?.manufacturerIds} variant="full" />
+          <CompatibilityBadge profile={profile} deviceName={selected?.name} serviceUuids={selected?.serviceUuids} gattServiceUuids={selected?.gattServiceUuids} manufacturerIds={selected?.manufacturerIds} variant="full" />
         </div>
         {tab === "dashboard" && <DashboardScreen />}
         {tab === "info" && <InfoScreen />}
