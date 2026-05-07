@@ -58,7 +58,7 @@ export function useScooter() {
       if (gattUuids.length) {
         const advUuids = device.serviceUuids ?? [];
         const merged = Array.from(new Set([...advUuids, ...gattUuids]));
-        store.setSelected({ ...device, serviceUuids: merged });
+        store.setSelected({ ...device, serviceUuids: merged, gattServiceUuids: gattUuids });
       }
 
       // Validate the GATT layout BEFORE any read/write so we never talk
