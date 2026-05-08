@@ -152,7 +152,9 @@ export function detectProfile(input: ProfileDetectInput): ProfileDetectResult | 
   }
 
   // 2. Service UUIDs — exact match or ASCII suffix.
-  const services = (input.serviceUuids ?? []).map((u) => u.toLowerCase());
+  const services = (input.serviceUuids ?? [])
+    .filter((u): u is string => typeof u === "string")
+    .map((u) => u.toLowerCase());
   for (const rule of SERVICE_RULES) {
     for (const u of services) {
       const flat = u.replace(/-/g, "");
