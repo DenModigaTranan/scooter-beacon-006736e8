@@ -123,4 +123,70 @@ describe("CompatibilityBadge — Source classification", () => {
     });
     expect(screen.getByText(/Source: Scan advertisement/i)).toBeInTheDocument();
   });
+
+  it("classifies as 'Device name only' when serviceUuids and gattServiceUuids are empty arrays", () => {
+    renderBadge({
+      profile: "ninebot",
+      deviceName: "Ninebot_Max_5F2A",
+      serviceUuids: [],
+      gattServiceUuids: [],
+      variant: "full",
+    });
+    expect(screen.getByText(/Source: Device name only/i)).toBeInTheDocument();
+  });
+
+  it("handles empty manufacturerIds array without mislabeling", () => {
+    renderBadge({
+      profile: "ninebot",
+      deviceName: "Ninebot_Max",
+      manufacturerIds: [],
+      variant: "full",
+    });
+    expect(screen.getByText(/Source: Device name only/i)).toBeInTheDocument();
+  });
+
+  it("handles string manufacturerIds safely — no crash, no false numeric match", () => {
+    renderBadge({
+      profile: "ninebot",
+      deviceName: "Ninebot_Max",
+      manufacturerIds: ["0x0810", "0x0a78"] as any,
+      variant: "full",
+    });
+    // Strings don't match numeric IDs, but the array presence still flags adsHelped.
+    expect(screen.getByText(/Source: Scan advertisement/i)).toBeInTheDocument();
+  });
+
+  it("handles manufacturerIds containing null/undefined entries safely", () => {
+    renderBadge({
+      profile: "ninebot",
+      deviceName: "Unknown_Device",
+      manufacturerIds: [null, undefined, 0x0810] as any,
+      variant: "full",
+    });
+    // 0x0810 is valid and matches; null/undefined don't crash.
+    expect(screen.getByText(/Source: Scan advertisement/i)).toBeInTheDocument();
+  });
+
+  it("handles non-array manufacturerIds prop safely without crashing", () => {
+    renderBadge({
+      profile: "ninebot",
+      deviceName: "Ninebot_Max",
+      manufacturerIds: 0x0810 as any,
+      variant: "full",
+    });
+    // Treated as empty array; only name contributes.
+    expect(screen.getByText(/Source: Device name only/i)).toBeInTheDocument();
+  });
+
+  it("classifies via manufacturerIds when all service UUID lists are empty", () => {
+    renderBadge({
+      profile: "ninebot",
+      deviceName: "Unknown_Device",
+      serviceUuids: [],
+      gattServiceUuids: [],
+      manufacturerIds: [0x0810],
+      variant: "full",
+    });
+    expect(screen.getByText(/Source: Scan advertisement/i)).toBeInTheDocument();
+  });
 });

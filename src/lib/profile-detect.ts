@@ -152,7 +152,9 @@ export function detectProfile(input: ProfileDetectInput): ProfileDetectResult | 
   }
 
   // 2. Service UUIDs — exact match or ASCII suffix.
-  const services = (input.serviceUuids ?? []).map((u) => u.toLowerCase());
+  const services = (input.serviceUuids ?? [])
+    .filter((u): u is string => typeof u === "string")
+    .map((u) => u.toLowerCase());
   for (const rule of SERVICE_RULES) {
     for (const u of services) {
       const flat = u.replace(/-/g, "");
@@ -168,7 +170,7 @@ export function detectProfile(input: ProfileDetectInput): ProfileDetectResult | 
   }
 
   // 3. Manufacturer IDs.
-  const ids = input.manufacturerIds ?? [];
+  const ids = Array.isArray(input.manufacturerIds) ? input.manufacturerIds : [];
   for (const rule of MANUFACTURER_RULES) {
     if (ids.includes(rule.id)) bump(buckets, rule.profile, rule.weight, rule.reason);
   }
