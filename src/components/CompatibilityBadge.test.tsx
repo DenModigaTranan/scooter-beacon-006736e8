@@ -78,4 +78,49 @@ describe("CompatibilityBadge — Source classification", () => {
     expect(chip).toBeTruthy();
     expect(chip.getAttribute("title")).toMatch(/via Scan advertisement/i);
   });
+
+  it("deduplicates case-differing UUIDs across serviceUuids and gattServiceUuids", () => {
+    renderBadge({
+      profile: "ninebot",
+      deviceName: "Unknown_Device",
+      serviceUuids: [NINEBOT_UUID.toUpperCase()],
+      gattServiceUuids: [NINEBOT_UUID.toLowerCase()],
+      variant: "full",
+    });
+    expect(screen.getByText(/Source: GATT services/i)).toBeInTheDocument();
+  });
+
+  it("classifies as 'Scan ads + GATT' when UUID is duplicated across both lists plus a manufacturer ID is present", () => {
+    renderBadge({
+      profile: "ninebot",
+      deviceName: "Ninebot_Max",
+      serviceUuids: [NINEBOT_UUID],
+      gattServiceUuids: [NINEBOT_UUID],
+      manufacturerIds: [0x0810],
+      variant: "full",
+    });
+    expect(screen.getByText(/Source: Scan ads \+ GATT/i)).toBeInTheDocument();
+  });
+
+  it("handles invalid UUID strings safely without crashing", () => {
+    renderBadge({
+      profile: "ninebot",
+      deviceName: "Ninebot_Max",
+      serviceUuids: ["not-a-uuid", "0000GGGG-0000-0000-0000-000000000000", ""],
+      gattServiceUuids: ["completely-bogus", "!!!malformed!!!"],
+      variant: "full",
+    });
+    // Name matches, invalid UUIDs are ignored — should not crash and still show a source.
+    expect(screen.getByText(/Source:/i)).toBeInTheDocument();
+  });
+
+  it("classifies duplicate UUIDs within the advertised list only as 'Scan advertisement'", () => {
+    renderBadge({
+      profile: "ninebot",
+      deviceName: "Unknown_Device",
+      serviceUuids: [NINEBOT_UUID, NINEBOT_UUID],
+      variant: "full",
+    });
+    expect(screen.getByText(/Source: Scan advertisement/i)).toBeInTheDocument();
+  });
 });
