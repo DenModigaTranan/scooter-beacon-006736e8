@@ -170,7 +170,7 @@ export function detectProfile(input: ProfileDetectInput): ProfileDetectResult | 
   }
 
   // 3. Manufacturer IDs.
-  const ids = input.manufacturerIds ?? [];
+  const ids = Array.isArray(input.manufacturerIds) ? input.manufacturerIds : [];
   for (const rule of MANUFACTURER_RULES) {
     if (ids.includes(rule.id)) bump(buckets, rule.profile, rule.weight, rule.reason);
   }
