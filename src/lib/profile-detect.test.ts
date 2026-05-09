@@ -100,3 +100,74 @@ describe("detectChipLabel", () => {
     expect(detectChipLabel({ profile: "ewa", confidence: "high", reasons: [], score: 0 })).toBe("EWA");
   });
 });
+
+describe("detectProfile — UUID format edge cases", () => {
+  const NINEBOT = "0000fff0-0000-1000-8000-006e696e65626f74";
+  const XIAOMI_FE95 = "0000fe95-0000-1000-8000-00805f9b34fb";
+
+  it("matches Ninebot suffix when UUID is uppercase", () => {
+    const r = detectProfile({ name: "(unnamed)", serviceUuids: [NINEBOT.toUpperCase()] });
+    expect(r?.profile).toBe("ninebot");
+  });
+
+  it("matches Ninebot suffix when UUID is mixed case", () => {
+    const mixed = "0000FFF0-0000-1000-8000-006e696E65626F74";
+    expect(detectProfile({ name: "(unnamed)", serviceUuids: [mixed] })?.profile).toBe("ninebot");
+  });
+
+  it("matches Ninebot suffix in undashed (flat 32-hex) form", () => {
+    const flat = NINEBOT.replace(/-/g, "");
+    expect(detectProfile({ name: "(unnamed)", serviceUuids: [flat] })?.profile).toBe("ninebot");
+  });
+
+  it("matches Xiaomi exact UUID when uppercase", () => {
+    expect(
+      detectProfile({ name: "(unnamed)", serviceUuids: [XIAOMI_FE95.toUpperCase()] })?.profile,
+    ).toBe("xiaomi-m365");
+  });
+
+  it("trims surrounding whitespace from UUIDs before matching", () => {
+    const padded = `  ${NINEBOT}\n`;
+    expect(detectProfile({ name: "(unnamed)", serviceUuids: [padded] })?.profile).toBe("ninebot");
+  });
+
+  it("ignores empty / whitespace-only UUID entries without crashing", () => {
+    const r = detectProfile({
+      name: "(unnamed)",
+      serviceUuids: ["", "   ", "\t\n"],
+    });
+    expect(r).toBeNull();
+  });
+
+  it("does NOT match a partial ASCII suffix missing the leading 0x00 byte", () => {
+    // Real suffix is "006e696e65626f74" (8 bytes incl. leading null).
+    // Replacing the null byte with 0xff must NOT match.
+    const fake = "0000fff0-0000-1000-8000-ff6e696e65626f74";
+    const r = detectProfile({ name: "(unnamed)", serviceUuids: [fake] });
+    expect(r).toBeNull();
+  });
+
+  it("does NOT match a UUID containing 'ninebot' ASCII outside the trailing position", () => {
+    // ASCII "ninebot" appearing mid-UUID, not at the end.
+    const fake = "006e696e65626f74-0000-1000-8000-0000abcdef00";
+    const r = detectProfile({ name: "(unnamed)", serviceUuids: [fake] });
+    expect(r).toBeNull();
+  });
+
+  it("does NOT match Xiaomi exact UUID if a single hex char differs", () => {
+    const fake = "0000fe96-0000-1000-8000-00805f9b34fb";
+    expect(detectProfile({ name: "(unnamed)", serviceUuids: [fake] })).toBeNull();
+  });
+
+  it("matches when one UUID in a list of unrelated UUIDs is the Ninebot one", () => {
+    const r = detectProfile({
+      name: "(unnamed)",
+      serviceUuids: [
+        "0000180a-0000-1000-8000-00805f9b34fb", // device info
+        "0000180f-0000-1000-8000-00805f9b34fb", // battery
+        NINEBOT.toUpperCase(),
+      ],
+    });
+    expect(r?.profile).toBe("ninebot");
+  });
+});

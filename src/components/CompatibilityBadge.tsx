@@ -46,11 +46,13 @@ function classifySource(
 ): Source {
   const all = (serviceUuids ?? [])
     .filter((u): u is string => typeof u === "string")
-    .map((u) => u.toLowerCase());
+    .map((u) => u.trim().toLowerCase())
+    .filter((u) => u.length > 0);
   const gatt = new Set(
     (gattServiceUuids ?? [])
       .filter((u): u is string => typeof u === "string")
-      .map((u) => u.toLowerCase()),
+      .map((u) => u.trim().toLowerCase())
+      .filter((u) => u.length > 0),
   );
   const advUuids = all.filter((u) => !gatt.has(u));
   const hasMfg = (manufacturerIds?.length ?? 0) > 0;
