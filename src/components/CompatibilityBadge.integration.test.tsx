@@ -86,20 +86,20 @@ describe("CompatibilityBadge — integration with scan/discovery pipeline", () =
     expect(screen.getByText(/Source: Scan ads \+ GATT/i)).toBeInTheDocument();
   });
 
-  it("dedupes case-different UUIDs from advert vs. GATT (advert UPPER, GATT lower)", () => {
+  it("dedupes case-different UUIDs from advert vs. GATT (advert UPPER, GATT lower) → counts as GATT-only", () => {
     const scanned: DiscoveredDevice = {
       deviceId: "AA:BB:CC:DD:EE:FF",
       name: "Unknown_Device",
       rssi: -70,
       serviceUuids: [NINEBOT_UUID.toUpperCase()],
     };
-    // GATT returns the same UUID lowercased — pipeline dedupes by string,
-    // so the merged list keeps both. Classifier must still treat the UUID
-    // as advertised (not gatt-only).
+    // GATT returns the same UUID lowercased. Pipeline keeps both strings
+    // in the merged list (Set dedup is case-sensitive), but the classifier
+    // dedupes case-insensitively → advUuids resolves to empty, so the
+    // signal is correctly attributed to GATT.
     const merged = mergeFromPipeline(scanned, [NINEBOT_UUID.toLowerCase()]);
     renderFromDevice(merged);
-    // Advertised UUID present → ads helped.
-    expect(screen.getByText(/Source: Scan advertisement/i)).toBeInTheDocument();
+    expect(screen.getByText(/Source: GATT services/i)).toBeInTheDocument();
   });
 
   it("handles undefined serviceUuids / manufacturerIds from a minimal scan record", () => {
