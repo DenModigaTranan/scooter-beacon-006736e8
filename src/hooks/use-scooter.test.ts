@@ -42,6 +42,9 @@ describe("useScooter.connect — GATT UUID merging", () => {
     scooterMock.readInfo.mockResolvedValue(null);
     scooterMock.disconnect.mockReset();
     scooterMock.disconnect.mockResolvedValue(undefined);
+    // Reset retry config to defaults between tests so per-test overrides
+    // can't leak across the suite.
+    configureHandshakeRetry({ enabled: true, backoffMs: 350 });
     useScooterStore.setState({
       state: "idle", devices: [], selected: null, info: null, telemetry: null,
       errorMessage: null, flashLog: [], flashing: false, pendingFlash: null,
