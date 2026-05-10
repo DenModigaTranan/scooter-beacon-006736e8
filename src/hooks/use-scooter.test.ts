@@ -28,7 +28,7 @@ vi.mock("@capacitor/haptics", () => ({
 }));
 vi.mock("@/lib/paired-profiles", () => ({ upsertPairedProfile: vi.fn() }));
 
-import { useScooter } from "@/hooks/use-scooter";
+import { useScooter, configureHandshakeRetry, handshakeRetryConfig } from "@/hooks/use-scooter";
 import { useScooterStore } from "@/store/scooter-store";
 
 describe("useScooter.connect — GATT UUID merging", () => {
