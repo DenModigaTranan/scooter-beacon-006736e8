@@ -34,6 +34,14 @@ import { useScooterStore } from "@/store/scooter-store";
 describe("useScooter.connect — GATT UUID merging", () => {
   beforeEach(() => {
     discoverMock.mockReset();
+    // Default to a successful handshake so the GATT-merge tests below
+    // exercise the happy path; the failure-path tests override per-call.
+    scooterMock.handshake.mockReset();
+    scooterMock.handshake.mockResolvedValue({ ok: true, variant: "strict" });
+    scooterMock.readInfo.mockReset();
+    scooterMock.readInfo.mockResolvedValue(null);
+    scooterMock.disconnect.mockReset();
+    scooterMock.disconnect.mockResolvedValue(undefined);
     useScooterStore.setState({
       state: "idle", devices: [], selected: null, info: null, telemetry: null,
       errorMessage: null, flashLog: [], flashing: false, pendingFlash: null,
