@@ -12,6 +12,30 @@ const haptic = async (style: ImpactStyle = ImpactStyle.Light) => {
   try { await Haptics.impact({ style }); } catch { /* ignore */ }
 };
 
+/**
+ * Tunable retry behavior for the post-connect GATT handshake. Exported as a
+ * mutable singleton so SettingsScreen (or tests) can flip it at runtime
+ * without re-mounting the hook. Defaults preserve the previous behavior:
+ * one retry after a 350ms backoff.
+ */
+export interface HandshakeRetryConfig {
+  /** When false, a failed handshake goes straight to disconnect-and-clear. */
+  enabled: boolean;
+  /** Delay between the first failed attempt and the retry, in ms. Clamped ≥0. */
+  backoffMs: number;
+}
+export const handshakeRetryConfig: HandshakeRetryConfig = {
+  enabled: true,
+  backoffMs: 350,
+};
+/** Patches fields in place so existing references see the update. */
+export function configureHandshakeRetry(patch: Partial<HandshakeRetryConfig>) {
+  if (typeof patch.enabled === "boolean") handshakeRetryConfig.enabled = patch.enabled;
+  if (typeof patch.backoffMs === "number" && patch.backoffMs >= 0) {
+    handshakeRetryConfig.backoffMs = patch.backoffMs;
+  }
+}
+
 export function useScooter() {
   const store = useScooterStore();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -66,11 +90,14 @@ export function useScooter() {
       // a similar name. Some peripherals (notably E-wheels rebadges and
       // first-connect-after-pairing on iOS) intermittently reject the ESC
       // probe on the very first attempt — give them one short retry before
-      // giving up and tearing the link down.
+      // giving up and tearing the link down. Retry behavior is governed by
+      // `handshakeRetryConfig` so users can disable it (or tune the backoff)
+      // from Settings without rebuilding.
       let hs = await scooter.handshake({ onLog: store.appendLog });
-      if (!hs.ok) {
-        store.appendLog(`! handshake: first attempt failed (${hs.reason}) — retrying once in 350ms`);
-        await new Promise((r) => setTimeout(r, 350));
+      if (!hs.ok && handshakeRetryConfig.enabled) {
+        const delay = Math.max(0, handshakeRetryConfig.backoffMs);
+        store.appendLog(`! handshake: first attempt failed (${hs.reason}) — retrying once in ${delay}ms`);
+        if (delay > 0) await new Promise((r) => setTimeout(r, delay));
         hs = await scooter.handshake({ onLog: store.appendLog });
         if (hs.ok) store.appendLog(`✓ handshake: retry succeeded`);
       }
