@@ -12,6 +12,30 @@ const haptic = async (style: ImpactStyle = ImpactStyle.Light) => {
   try { await Haptics.impact({ style }); } catch { /* ignore */ }
 };
 
+/**
+ * Tunable retry behavior for the post-connect GATT handshake. Exported as a
+ * mutable singleton so SettingsScreen (or tests) can flip it at runtime
+ * without re-mounting the hook. Defaults preserve the previous behavior:
+ * one retry after a 350ms backoff.
+ */
+export interface HandshakeRetryConfig {
+  /** When false, a failed handshake goes straight to disconnect-and-clear. */
+  enabled: boolean;
+  /** Delay between the first failed attempt and the retry, in ms. Clamped ≥0. */
+  backoffMs: number;
+}
+export const handshakeRetryConfig: HandshakeRetryConfig = {
+  enabled: true,
+  backoffMs: 350,
+};
+/** Patches fields in place so existing references see the update. */
+export function configureHandshakeRetry(patch: Partial<HandshakeRetryConfig>) {
+  if (typeof patch.enabled === "boolean") handshakeRetryConfig.enabled = patch.enabled;
+  if (typeof patch.backoffMs === "number" && patch.backoffMs >= 0) {
+    handshakeRetryConfig.backoffMs = patch.backoffMs;
+  }
+}
+
 export function useScooter() {
   const store = useScooterStore();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
