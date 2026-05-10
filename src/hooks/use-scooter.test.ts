@@ -194,4 +194,45 @@ describe("useScooter.connect — GATT UUID merging", () => {
     expect(s.state).toBe("error");
     expect(s.errorMessage).toMatch(/Handshake failed/);
   });
+
+  it("skips the retry entirely when handshake retry is disabled via config", async () => {
+    configureHandshakeRetry({ enabled: false });
+    discoverMock.mockResolvedValue([]);
+    scooterMock.handshake.mockReset();
+    scooterMock.handshake.mockResolvedValueOnce({ ok: false, reason: "ESC probe rejected" });
+    scooterMock.disconnect.mockClear();
+    const device = { deviceId: "99:AA", name: "Ninebot_Max", rssi: -50 };
+
+    const { result } = renderHook(() => useScooter());
+    await act(async () => { await result.current.connect(device); });
+
+    const s = useScooterStore.getState();
+    expect(scooterMock.handshake).toHaveBeenCalledTimes(1);
+    expect(scooterMock.disconnect).toHaveBeenCalled();
+    expect(s.state).toBe("error");
+  });
+
+  it("honors a custom backoffMs and clamps negative values to the previous valid value", async () => {
+    configureHandshakeRetry({ backoffMs: 10 });
+    expect(handshakeRetryConfig.backoffMs).toBe(10);
+    configureHandshakeRetry({ backoffMs: -50 });
+    expect(handshakeRetryConfig.backoffMs).toBe(10);
+
+    discoverMock.mockResolvedValue([]);
+    scooterMock.handshake.mockReset();
+    scooterMock.handshake
+      .mockResolvedValueOnce({ ok: false, reason: "transient" })
+      .mockResolvedValueOnce({ ok: true, variant: "strict" });
+    const device = { deviceId: "BB:CC", name: "Ninebot_Max", rssi: -50 };
+
+    const { result } = renderHook(() => useScooter());
+    const t0 = Date.now();
+    await act(async () => { await result.current.connect(device); });
+    const elapsed = Date.now() - t0;
+
+    expect(scooterMock.handshake).toHaveBeenCalledTimes(2);
+    // Should be much faster than the 350ms default — proves the config was used.
+    expect(elapsed).toBeLessThan(200);
+    expect(useScooterStore.getState().handshake).toEqual({ ok: true, variant: "strict" });
+  });
 });
