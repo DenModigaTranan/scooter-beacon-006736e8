@@ -90,11 +90,14 @@ export function useScooter() {
       // a similar name. Some peripherals (notably E-wheels rebadges and
       // first-connect-after-pairing on iOS) intermittently reject the ESC
       // probe on the very first attempt — give them one short retry before
-      // giving up and tearing the link down.
+      // giving up and tearing the link down. Retry behavior is governed by
+      // `handshakeRetryConfig` so users can disable it (or tune the backoff)
+      // from Settings without rebuilding.
       let hs = await scooter.handshake({ onLog: store.appendLog });
-      if (!hs.ok) {
-        store.appendLog(`! handshake: first attempt failed (${hs.reason}) — retrying once in 350ms`);
-        await new Promise((r) => setTimeout(r, 350));
+      if (!hs.ok && handshakeRetryConfig.enabled) {
+        const delay = Math.max(0, handshakeRetryConfig.backoffMs);
+        store.appendLog(`! handshake: first attempt failed (${hs.reason}) — retrying once in ${delay}ms`);
+        if (delay > 0) await new Promise((r) => setTimeout(r, delay));
         hs = await scooter.handshake({ onLog: store.appendLog });
         if (hs.ok) store.appendLog(`✓ handshake: retry succeeded`);
       }
