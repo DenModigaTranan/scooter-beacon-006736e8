@@ -67,7 +67,23 @@ export function useScooter() {
       const hs = await scooter.handshake({ onLog: store.appendLog });
       store.setHandshake(hs);
       if (!hs.ok) {
-        store.setError(`Handshake failed: ${hs.reason}`);
+        // Misclassification recovery: the badge / name suggested an M365-family
+        // peripheral but the GATT layout (or ESC probe) disagreed. Tear the
+        // link down completely so the user lands back at a clean "idle" state
+        // — leaving a half-open BLE connection on a non-M365 device blocks
+        // the next scan/connect on iOS and confuses our store, which would
+        // still show the device as "connected" with stale `selected` data.
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        try { await scooter.disconnect(); } catch { /* link may already be gone */ }
+        await haptic(ImpactStyle.Heavy);
+        store.appendLog(`! handshake: aborting session — ${hs.reason}`);
+        store.setSelected(null);
+        store.setInfo(null);
+        store.setTelemetry(null);
+        store.setExtendedInfo(null);
+        store.setError(
+          `Handshake failed: ${hs.reason}. This device doesn't expose the expected M365 GATT layout — it may be misclassified by name. Disconnected.`
+        );
         return;
       }
 
