@@ -34,6 +34,14 @@ import { useScooterStore } from "@/store/scooter-store";
 describe("useScooter.connect — GATT UUID merging", () => {
   beforeEach(() => {
     discoverMock.mockReset();
+    // Default to a successful handshake so the GATT-merge tests below
+    // exercise the happy path; the failure-path tests override per-call.
+    scooterMock.handshake.mockReset();
+    scooterMock.handshake.mockResolvedValue({ ok: true, variant: "strict" });
+    scooterMock.readInfo.mockReset();
+    scooterMock.readInfo.mockResolvedValue(null);
+    scooterMock.disconnect.mockReset();
+    scooterMock.disconnect.mockResolvedValue(undefined);
     useScooterStore.setState({
       state: "idle", devices: [], selected: null, info: null, telemetry: null,
       errorMessage: null, flashLog: [], flashing: false, pendingFlash: null,
@@ -95,5 +103,45 @@ describe("useScooter.connect — GATT UUID merging", () => {
     const sel = useScooterStore.getState().selected!;
     expect(sel.serviceUuids).toEqual(["0000fff0-0000-1000-8000-00805f9b34fb"]);
     expect(sel.gattServiceUuids).toEqual(["0000fff0-0000-1000-8000-00805f9b34fb"]);
+  });
+
+  it("recovers from a handshake failure: disconnects, clears selected, surfaces a misclassification hint", async () => {
+    discoverMock.mockResolvedValue([]);
+    scooterMock.handshake.mockResolvedValueOnce({ ok: false, reason: "no M365 service found" });
+    scooterMock.disconnect.mockClear();
+    const device = {
+      deviceId: "11:22",
+      name: "Ninebot_Lookalike",
+      rssi: -55,
+      serviceUuids: ["0000fff0-0000-1000-8000-00805f9b34fb"],
+    };
+
+    const { result } = renderHook(() => useScooter());
+    await act(async () => { await result.current.connect(device); });
+
+    const s = useScooterStore.getState();
+    expect(scooterMock.disconnect).toHaveBeenCalled();
+    expect(s.selected).toBeNull();
+    expect(s.info).toBeNull();
+    expect(s.telemetry).toBeNull();
+    expect(s.extendedInfo).toBeNull();
+    expect(s.handshake).toEqual({ ok: false, reason: "no M365 service found" });
+    expect(s.errorMessage).toMatch(/Handshake failed/);
+    expect(s.errorMessage).toMatch(/misclassified/i);
+    expect(s.state).toBe("error");
+  });
+
+  it("survives a disconnect throw during handshake-failure cleanup without losing the error", async () => {
+    discoverMock.mockResolvedValue([]);
+    scooterMock.handshake.mockResolvedValueOnce({ ok: false, reason: "ESC probe rejected" });
+    scooterMock.disconnect.mockRejectedValueOnce(new Error("link already closed"));
+    const device = { deviceId: "33:44", name: "M365_Clone", rssi: -60 };
+
+    const { result } = renderHook(() => useScooter());
+    await act(async () => { await result.current.connect(device); });
+
+    const s = useScooterStore.getState();
+    expect(s.errorMessage).toMatch(/ESC probe rejected/);
+    expect(s.selected).toBeNull();
   });
 });
