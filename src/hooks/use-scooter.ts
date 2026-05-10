@@ -63,8 +63,17 @@ export function useScooter() {
 
       // Validate the GATT layout BEFORE any read/write so we never talk
       // M365 protocol to a non-M365 peripheral that just happens to advertise
-      // a similar name.
-      const hs = await scooter.handshake({ onLog: store.appendLog });
+      // a similar name. Some peripherals (notably E-wheels rebadges and
+      // first-connect-after-pairing on iOS) intermittently reject the ESC
+      // probe on the very first attempt — give them one short retry before
+      // giving up and tearing the link down.
+      let hs = await scooter.handshake({ onLog: store.appendLog });
+      if (!hs.ok) {
+        store.appendLog(`! handshake: first attempt failed (${hs.reason}) — retrying once in 350ms`);
+        await new Promise((r) => setTimeout(r, 350));
+        hs = await scooter.handshake({ onLog: store.appendLog });
+        if (hs.ok) store.appendLog(`✓ handshake: retry succeeded`);
+      }
       store.setHandshake(hs);
       if (!hs.ok) {
         // Misclassification recovery: the badge / name suggested an M365-family
