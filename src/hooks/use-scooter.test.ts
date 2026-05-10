@@ -129,7 +129,47 @@ describe("useScooter.connect — GATT UUID merging", () => {
     expect(s.errorMessage).toMatch(/Handshake failed/);
     expect(s.errorMessage).toMatch(/misclassified/i);
     expect(s.state).toBe("error");
+  it("retries handshake once after a transient failure and proceeds on success", async () => {
+    discoverMock.mockResolvedValue([]);
+    scooterMock.handshake.mockReset();
+    scooterMock.handshake
+      .mockResolvedValueOnce({ ok: false, reason: "transient ESC timeout" })
+      .mockResolvedValueOnce({ ok: true, variant: "strict" });
+    scooterMock.readInfo.mockResolvedValueOnce({ serial: "X" });
+    scooterMock.disconnect.mockClear();
+    const device = { deviceId: "55:66", name: "Ninebot_Max", rssi: -50 };
+
+    const { result } = renderHook(() => useScooter());
+    await act(async () => { await result.current.connect(device); });
+
+    const s = useScooterStore.getState();
+    expect(scooterMock.handshake).toHaveBeenCalledTimes(2);
+    expect(scooterMock.disconnect).not.toHaveBeenCalled();
+    expect(s.handshake).toEqual({ ok: true, variant: "strict" });
+    expect(s.selected?.deviceId).toBe("55:66");
+    expect(s.errorMessage).toBeNull();
   });
+
+  it("falls back to disconnect-and-clear if both handshake attempts fail", async () => {
+    discoverMock.mockResolvedValue([]);
+    scooterMock.handshake.mockReset();
+    scooterMock.handshake
+      .mockResolvedValueOnce({ ok: false, reason: "ESC probe rejected" })
+      .mockResolvedValueOnce({ ok: false, reason: "ESC probe rejected" });
+    scooterMock.disconnect.mockClear();
+    const device = { deviceId: "77:88", name: "M365_Clone", rssi: -60 };
+
+    const { result } = renderHook(() => useScooter());
+    await act(async () => { await result.current.connect(device); });
+
+    const s = useScooterStore.getState();
+    expect(scooterMock.handshake).toHaveBeenCalledTimes(2);
+    expect(scooterMock.disconnect).toHaveBeenCalled();
+    expect(s.selected).toBeNull();
+    expect(s.state).toBe("error");
+    expect(s.errorMessage).toMatch(/Handshake failed/);
+  });
+});
 
   it("survives a disconnect throw during handshake-failure cleanup without losing the error", async () => {
     discoverMock.mockResolvedValue([]);
