@@ -10,7 +10,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lhci": "npx --yes @lhci/cli@0.14.x autorun --config=./lighthouserc.cjs",
+    "lhci:collect": "npx --yes @lhci/cli@0.14.x collect --config=./lighthouserc.cjs",
+    "lhci:assert": "npx --yes @lhci/cli@0.14.x assert --config=./lighthouserc.cjs"
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^8.1.3",
