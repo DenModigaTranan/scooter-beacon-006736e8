@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useScooter, configureHandshakeRetry, handshakeRetryConfig } from "@/hooks/use-scooter";
+import { useScooter, configureHandshakeRetry, handshakeRetryConfig, resetHandshakeRetry, HANDSHAKE_RETRY_DEFAULTS } from "@/hooks/use-scooter";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useScooterStore } from "@/store/scooter-store";
