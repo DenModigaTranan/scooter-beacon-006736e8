@@ -24,16 +24,23 @@ export interface HandshakeRetryConfig {
   /** Delay between the first failed attempt and the retry, in ms. Clamped ≥0. */
   backoffMs: number;
 }
-export const handshakeRetryConfig: HandshakeRetryConfig = {
+export const HANDSHAKE_RETRY_DEFAULTS: Readonly<HandshakeRetryConfig> = Object.freeze({
   enabled: true,
   backoffMs: 350,
-};
+});
+export const handshakeRetryConfig: HandshakeRetryConfig = { ...HANDSHAKE_RETRY_DEFAULTS };
 /** Patches fields in place so existing references see the update. */
 export function configureHandshakeRetry(patch: Partial<HandshakeRetryConfig>) {
   if (typeof patch.enabled === "boolean") handshakeRetryConfig.enabled = patch.enabled;
   if (typeof patch.backoffMs === "number" && patch.backoffMs >= 0) {
     handshakeRetryConfig.backoffMs = patch.backoffMs;
   }
+}
+/** Restores defaults in place. Returns the reset config for convenience. */
+export function resetHandshakeRetry(): HandshakeRetryConfig {
+  handshakeRetryConfig.enabled = HANDSHAKE_RETRY_DEFAULTS.enabled;
+  handshakeRetryConfig.backoffMs = HANDSHAKE_RETRY_DEFAULTS.backoffMs;
+  return handshakeRetryConfig;
 }
 
 export function useScooter() {

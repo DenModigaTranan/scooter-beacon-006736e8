@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useScooter, configureHandshakeRetry, handshakeRetryConfig } from "@/hooks/use-scooter";
+import { useScooter, configureHandshakeRetry, handshakeRetryConfig, resetHandshakeRetry, HANDSHAKE_RETRY_DEFAULTS } from "@/hooks/use-scooter";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useScooterStore } from "@/store/scooter-store";
@@ -410,6 +410,27 @@ export function SettingsScreen() {
             <Save className="w-4 h-4 mr-2" /> APPLY
           </Button>
         </div>
+
+        <Button
+          variant="ghost"
+          className="w-full mt-3 mono tracking-widest text-muted-foreground"
+          onClick={() => {
+            const cfg = resetHandshakeRetry();
+            setRetryEnabled(cfg.enabled);
+            setRetryBackoff(String(cfg.backoffMs));
+            toast.success(
+              `Reset to defaults (retry ${cfg.enabled ? "on" : "off"}, ${cfg.backoffMs}ms)`,
+            );
+          }}
+          disabled={
+            retryEnabled === HANDSHAKE_RETRY_DEFAULTS.enabled &&
+            Number(retryBackoff) === HANDSHAKE_RETRY_DEFAULTS.backoffMs &&
+            handshakeRetryConfig.enabled === HANDSHAKE_RETRY_DEFAULTS.enabled &&
+            handshakeRetryConfig.backoffMs === HANDSHAKE_RETRY_DEFAULTS.backoffMs
+          }
+        >
+          <Trash2 className="w-4 h-4 mr-2" /> RESET TO DEFAULTS
+        </Button>
       </div>
 
       <div className="panel p-4">
