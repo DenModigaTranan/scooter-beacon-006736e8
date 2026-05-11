@@ -353,6 +353,66 @@ export function SettingsScreen() {
       </AlertDialog>
 
       <div className="panel p-4">
+        <div className="mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground mb-2">
+          Handshake retry
+        </div>
+        <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
+          After a failed post-connect GATT handshake, retry once with a short
+          backoff before tearing the link down. Disable if you'd rather fail
+          fast on misclassified devices.
+        </p>
+
+        <div className="flex items-center justify-between mb-3">
+          <Label htmlFor="hs-retry" className="mono text-xs">
+            Enable retry
+          </Label>
+          <Switch
+            id="hs-retry"
+            checked={retryEnabled}
+            onCheckedChange={(v) => {
+              setRetryEnabled(v);
+              configureHandshakeRetry({ enabled: v });
+              toast.success(`Handshake retry ${v ? "enabled" : "disabled"}`);
+            }}
+          />
+        </div>
+
+        <Label htmlFor="hs-backoff" className="mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+          Backoff (ms)
+        </Label>
+        <div className="flex gap-2 mt-1">
+          <Input
+            id="hs-backoff"
+            type="number"
+            min={0}
+            step={50}
+            value={retryBackoff}
+            onChange={(e) => setRetryBackoff(e.target.value)}
+            disabled={!retryEnabled}
+            className="mono text-xs"
+          />
+          <Button
+            variant="outline"
+            className="mono tracking-widest"
+            disabled={!retryEnabled}
+            onClick={() => {
+              const n = Number(retryBackoff);
+              if (!Number.isFinite(n) || n < 0) {
+                toast.error("Backoff must be a non-negative number");
+                setRetryBackoff(String(handshakeRetryConfig.backoffMs));
+                return;
+              }
+              configureHandshakeRetry({ backoffMs: n });
+              setRetryBackoff(String(handshakeRetryConfig.backoffMs));
+              toast.success(`Backoff set to ${handshakeRetryConfig.backoffMs}ms`);
+            }}
+          >
+            <Save className="w-4 h-4 mr-2" /> APPLY
+          </Button>
+        </div>
+      </div>
+
+      <div className="panel p-4">
         <div className="mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground mb-2">Diagnostic log</div>
         <div className="text-xs text-muted-foreground mb-3">{flashLog.length} lines buffered.</div>
         <div className="flex gap-2">
