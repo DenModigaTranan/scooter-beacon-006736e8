@@ -39,6 +39,9 @@ export function SettingsScreen() {
   const [newPrefix, setNewPrefix] = useState("");
   const importInputRef = useRef<HTMLInputElement>(null);
 
+  const [retryEnabled, setRetryEnabled] = useState(handshakeRetryConfig.enabled);
+  const [retryBackoff, setRetryBackoff] = useState(String(handshakeRetryConfig.backoffMs));
+
   const [pendingRestore, setPendingRestore] = useState<{
     file: File;
     json: string;
