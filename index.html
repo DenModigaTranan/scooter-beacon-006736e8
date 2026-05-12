@@ -38,15 +38,29 @@
       crossorigin
       href="https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwgknk-4.woff2"
     />
-    <link
-      rel="preload"
-      as="style"
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Work+Sans:wght@300;400;500;600;700&display=swap"
-      onload="this.onload=null;this.rel='stylesheet'"
-    />
-    <noscript>
-      <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Work+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-    </noscript>
+    <!--
+      Inline @font-face declarations pointing at the preloaded woff2 files.
+      This removes the render-blocking Google Fonts CSS request from the
+      critical path (HTML -> CSS -> woff2 becomes HTML -> woff2). font-display:
+      swap ensures text paints immediately with the system fallback while the
+      web font loads, so FCP is not blocked by font fetching.
+    -->
+    <style>
+      @font-face {
+        font-family: 'Work Sans';
+        font-style: normal;
+        font-weight: 300 700;
+        font-display: swap;
+        src: url(https://fonts.gstatic.com/s/worksans/v24/QGYsz_wNahGAdqQ43Rh_fKDptfpA4Q.woff2) format('woff2');
+      }
+      @font-face {
+        font-family: 'JetBrains Mono';
+        font-style: normal;
+        font-weight: 400 800;
+        font-display: swap;
+        src: url(https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwgknk-4.woff2) format('woff2');
+      }
+    </style>
     <meta property="og:title" content="Scooter Beacon">
   <meta name="twitter:title" content="Scooter Beacon">
   <meta property="og:description" content="Scooterapp">
