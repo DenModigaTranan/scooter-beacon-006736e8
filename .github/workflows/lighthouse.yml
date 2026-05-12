@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      device_target_url:
+        description: "Public URL to test on the real-device profile (leave blank to skip)"
+        required: false
+        default: ""
 
 jobs:
   lighthouse:
