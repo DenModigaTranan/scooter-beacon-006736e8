@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      device_target_url:
+        description: "Public URL to test on the real-device profile (leave blank to skip)"
+        required: false
+        default: ""
 
 jobs:
   lighthouse:
@@ -31,4 +36,11 @@ jobs:
       - name: Run Lighthouse CI (mobile)
         run: npx --yes @lhci/cli@0.14.x autorun --config=./lighthouserc.mobile.cjs
         env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: Run Lighthouse CI (real device profile)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.device_target_url != '' }}
+        run: npx --yes @lhci/cli@0.14.x autorun --config=./lighthouserc.device.cjs
+        env:
+          LHCI_TARGET_URL: ${{ inputs.device_target_url }}
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}

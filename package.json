@@ -14,6 +14,7 @@
     "lhci": "npm run lhci:desktop && npm run lhci:mobile",
     "lhci:desktop": "npx --yes @lhci/cli@0.14.x autorun --config=./lighthouserc.cjs",
     "lhci:mobile": "npx --yes @lhci/cli@0.14.x autorun --config=./lighthouserc.mobile.cjs",
+    "lhci:device": "npx --yes @lhci/cli@0.14.x autorun --config=./lighthouserc.device.cjs",
     "lhci:collect": "npx --yes @lhci/cli@0.14.x collect --config=./lighthouserc.cjs",
     "lhci:assert": "npx --yes @lhci/cli@0.14.x assert --config=./lighthouserc.cjs"
   },
