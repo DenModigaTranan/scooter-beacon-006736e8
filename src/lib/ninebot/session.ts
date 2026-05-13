@@ -344,14 +344,20 @@ function optimisticTelemetry(cmd: NinebotCommand): Partial<NinebotTelemetry> | n
   }
 }
 
-/** WebCrypto when available, Math.random fallback otherwise. */
+/**
+ * Cryptographically secure random bytes. We deliberately do NOT fall back
+ * to Math.random — predictable handshake nonces / session keys would let a
+ * physically-proximate attacker replay or spoof the BLE pairing. Every
+ * runtime we ship into (modern browsers, iOS WKWebView, Android WebView
+ * API 21+, Node 18+) provides WebCrypto, so a missing implementation is a
+ * hard configuration error worth surfacing loudly.
+ */
 function randomBytes(n: number): Uint8Array {
-  const out = new Uint8Array(n);
-  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
-    crypto.getRandomValues(out);
-  } else {
-    for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
+  if (typeof crypto === "undefined" || !crypto.getRandomValues) {
+    throw new Error("crypto.getRandomValues is required for Ninebot session key generation");
   }
+  const out = new Uint8Array(n);
+  crypto.getRandomValues(out);
   return out;
 }
 
