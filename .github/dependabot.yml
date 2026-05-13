@@ -1,0 +1,52 @@
+version: 2
+# Dependabot configuration. Pairs with .github/workflows/security.yml:
+# the security workflow detects vulnerable deps; Dependabot opens the PRs
+# to fix them. Security updates are always on by default — the entries
+# below also enable grouped weekly version bumps so the PR queue stays
+# manageable.
+
+updates:
+  # ---------------------------------------------------------------------------
+  # npm — application dependencies. Grouped so a typical week produces
+  # ~2 PRs (one prod, one dev) instead of one per package. Security
+  # advisories still open their own PRs immediately, ungrouped.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "security"]
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: scope
+    groups:
+      prod-minor-patch:
+        dependency-type: production
+        update-types: ["minor", "patch"]
+      dev-minor-patch:
+        dependency-type: development
+        update-types: ["minor", "patch"]
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions — keep CI actions (including the security workflow
+  # itself) patched against supply-chain issues.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Etc/UTC"
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "ci"
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]
