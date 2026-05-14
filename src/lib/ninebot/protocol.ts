@@ -400,11 +400,13 @@ async function aesCtr(payload: Uint8Array, key: Uint8Array): Promise<Uint8Array>
     throw new Error("WebCrypto subtle is required for Ninebot AES-128-CTR");
   }
   const ck = await crypto.subtle.importKey(
-    "raw", key, { name: "AES-CTR" }, false, ["encrypt", "decrypt"],
+    "raw", key as BufferSource, { name: "AES-CTR" }, false, ["encrypt", "decrypt"],
   );
   const counter = new Uint8Array(16); // zero IV; see header comment
   const out = await crypto.subtle.encrypt(
-    { name: "AES-CTR", counter, length: 64 }, ck, payload,
+    { name: "AES-CTR", counter: counter as BufferSource, length: 64 },
+    ck,
+    payload as BufferSource,
   );
   return new Uint8Array(out);
 }
