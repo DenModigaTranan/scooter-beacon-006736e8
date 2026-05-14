@@ -105,7 +105,7 @@ export function createRealDeviceTransport(): NinebotTransport {
           const { frames, remaining } = consumeFrames(merged);
           inboundLeftover = remaining;
           for (const f of frames) {
-            const payload = HANDSHAKE_CMDS.has(f.cmd)
+            const decrypted = HANDSHAKE_CMDS.has(f.cmd)
               ? f.payload
               : await decryptPayload(f.payload, sessionKey);
             // Re-emit a wire-format frame with the deciphered payload so
@@ -114,7 +114,8 @@ export function createRealDeviceTransport(): NinebotTransport {
             // re-framed), but it keeps the seam tight and means the
             // decoder is the single source of truth for parsing.
             const replayed = buildFrame({
-              src: f.src, dst: f.dst, cmd: f.cmd, arg: f.arg, payload,
+              src: f.src, dst: f.dst, cmd: f.cmd, arg: f.arg,
+              payload: new Uint8Array(decrypted),
             });
             onBytes(replayed);
           }
