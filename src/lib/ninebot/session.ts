@@ -285,6 +285,9 @@ export class NinebotSession {
     // is in scope under the mock build.
     const appNonce = randomBytes(16);
     const sessionKey = randomBytes(16);
+    // Retain the app nonce so `installSessionKey()` can mix it with the
+    // device nonce captured from the AUTH_PRE_COMM reply.
+    this.appNonce = appNonce;
     const authPromise = new Promise<void>((resolve, reject) => {
       this.authResolve = resolve;
       this.authReject = reject;
@@ -298,9 +301,7 @@ export class NinebotSession {
     }, AUTH_TIMEOUT_MS);
 
     try {
-      await genericBle.writeCharacteristic(
-        NB_GATT.SERVICE, NB_GATT.CHAR_RX, buildAuthPreComm(appNonce), false,
-      );
+      await this.transport.send(buildAuthPreComm(appNonce));
       // Brief breather between PRE_COMM and SET_PWD so the device's
       // firmware-side state machine has actually advanced — real
       // hardware sometimes drops back-to-back writes inside one ATT
@@ -308,9 +309,7 @@ export class NinebotSession {
       await sleep(40);
       // Stage 2: commit the session key. The mock acks with AUTH_OK
       // immediately; production devices may take ~100ms.
-      await genericBle.writeCharacteristic(
-        NB_GATT.SERVICE, NB_GATT.CHAR_RX, buildAuthSetPwd(sessionKey), false,
-      );
+      await this.transport.send(buildAuthSetPwd(sessionKey));
       await authPromise;
     } finally {
       clearTimeout(timer);
@@ -336,11 +335,8 @@ export class NinebotSession {
     const spec = POLL_REGISTERS[this.pollIndex % POLL_REGISTERS.length];
     this.pollIndex += 1;
     try {
-      await genericBle.writeCharacteristic(
-        NB_GATT.SERVICE,
-        NB_GATT.CHAR_RX,
+      await this.transport.send(
         buildReadRegister(spec.target, spec.register, spec.length),
-        false,
       );
     } catch {
       // Swallow — the next interval tick will try again. We deliberately
