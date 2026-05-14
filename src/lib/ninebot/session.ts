@@ -211,9 +211,7 @@ export class NinebotSession {
       this.telemetry = { ...this.telemetry, ...optimistic };
       this.events.onTelemetry?.(this.telemetry);
     }
-    await genericBle.writeCharacteristic(
-      NB_GATT.SERVICE, NB_GATT.CHAR_RX, frame, false,
-    );
+    await this.transport.send(frame);
   }
 
   private setStatus(next: NinebotSessionStatus, detail?: string) {
@@ -238,10 +236,21 @@ export class NinebotSession {
   }
 
   private handleFrame(f: NinebotFrame) {
+    // Capture the device nonce as soon as the AUTH_PRE_COMM reply lands.
+    // The transport will need it (combined with our app nonce) to derive
+    // the session key once AUTH_OK acks the pairing.
+    if (f.cmd === NB.CMD.AUTH_PRE_COMM && f.payload.length === 16) {
+      this.deviceNonce = new Uint8Array(f.payload);
+      return;
+    }
     // Auth replies — only relevant while we're still negotiating, but
     // checking unconditionally is cheap and protects against late
     // duplicates from the device.
     if (f.cmd === NB.CMD.AUTH_OK && this.authResolve) {
+      // Derive the session key and install it on the transport. For the
+      // mock transport this is a no-op; for the real-device transport it
+      // arms AES-128-CTR for every subsequent frame.
+      void this.installSessionKey();
       this.authResolve();
       this.authResolve = null;
       this.authReject = null;
@@ -254,6 +263,18 @@ export class NinebotSession {
     if (Object.keys(partial).length > 0) {
       this.telemetry = { ...this.telemetry, ...partial };
       this.events.onTelemetry?.(this.telemetry);
+    }
+  }
+
+  private async installSessionKey(): Promise<void> {
+    if (!this.appNonce || !this.deviceNonce) return;
+    try {
+      const key = await deriveSessionKey(this.appNonce, this.deviceNonce);
+      this.transport.setSessionKey(key);
+    } catch (e) {
+      // Don't kill the session — fall back to identity. The transport
+      // will treat a null key as plaintext, matching the mock.
+      this.events.onStatus?.(this.status, `key derivation failed: ${(e as Error).message}`);
     }
   }
 
