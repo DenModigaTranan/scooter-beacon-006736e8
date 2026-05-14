@@ -98,8 +98,19 @@ const POLL_REGISTERS: { target: number; register: number; length: number }[] = [
   { target: NB.NODE.ESC, register: NB.REG.LOCK,       length: 1 },
 ];
 
+export interface NinebotSessionOptions {
+  /**
+   * Inject a transport. Defaults to the mock/passthrough transport, which
+   * is what the Lovable web preview and the existing in-process mock
+   * peripheral expect. Pass `createRealDeviceTransport()` from
+   * `./transport.ts` to route post-handshake frames through AES-128-CTR.
+   */
+  transport?: NinebotTransport;
+}
+
 export class NinebotSession {
   private events: NinebotSessionEvents;
+  private transport: NinebotTransport;
   private status: NinebotSessionStatus = "idle";
   private telemetry: NinebotTelemetry = {};
   private rxBuffer: Uint8Array = new Uint8Array(0);
@@ -109,10 +120,15 @@ export class NinebotSession {
   /** Resolved when AUTH_OK is observed, rejected on timeout. */
   private authResolve: (() => void) | null = null;
   private authReject: ((err: Error) => void) | null = null;
+  /** Captured device nonce from the AUTH_PRE_COMM reply (16 bytes). */
+  private deviceNonce: Uint8Array | null = null;
+  /** App nonce sent in AUTH_PRE_COMM, retained for KDF input on AUTH_OK. */
+  private appNonce: Uint8Array | null = null;
   private stopped = false;
 
-  constructor(events: NinebotSessionEvents = {}) {
+  constructor(events: NinebotSessionEvents = {}, options: NinebotSessionOptions = {}) {
     this.events = events;
+    this.transport = options.transport ?? createMockTransport();
   }
 
   /**
@@ -126,9 +142,7 @@ export class NinebotSession {
     if (this.status !== "idle") return;
     this.setStatus("subscribing");
     try {
-      this.unsubscribeNotify = await genericBle.startNotifications(
-        NB_GATT.SERVICE,
-        NB_GATT.CHAR_TX,
+      this.unsubscribeNotify = await this.transport.subscribe(
         (bytes) => this.onIncomingBytes(bytes),
       );
     } catch (e) {
