@@ -174,6 +174,7 @@ export class NinebotSession {
     if (this.unsubscribeNotify) {
       try { await this.unsubscribeNotify(); } catch { /* swallow */ }
       this.unsubscribeNotify = null;
+    }
     this.transport.setSessionKey(null);
     this.appNonce = null;
     this.deviceNonce = null;
