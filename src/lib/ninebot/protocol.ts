@@ -442,6 +442,6 @@ export async function deriveSessionKey(
   const buf = new Uint8Array(appNonce.length + devNonce.length);
   buf.set(appNonce, 0);
   buf.set(devNonce, appNonce.length);
-  const digest = await crypto.subtle.digest("SHA-256", buf);
+  const digest = await crypto.subtle.digest("SHA-256", buf as BufferSource);
   return new Uint8Array(digest).slice(0, 16);
 }
