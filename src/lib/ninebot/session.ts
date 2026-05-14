@@ -24,19 +24,22 @@
  *     doesn't permanently freeze the tiles.
  */
 
-import { genericBle } from "@/lib/generic-ble";
 import {
   NB,
-  NB_GATT,
   buildAuthPreComm,
   buildAuthSetPwd,
   buildReadRegister,
   buildWriteRegister,
   consumeFrames,
   decodeRegisterReply,
+  deriveSessionKey,
   type NinebotFrame,
   type NinebotTelemetry,
 } from "./protocol";
+import {
+  createMockTransport,
+  type NinebotTransport,
+} from "./transport";
 
 /**
  * Catalog of high-level commands the UI can send. Lifted to a tagged
