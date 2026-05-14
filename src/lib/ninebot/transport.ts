@@ -85,7 +85,7 @@ export function createMockTransport(): NinebotTransport {
  */
 export function createRealDeviceTransport(): NinebotTransport {
   let sessionKey: Uint8Array | null = null;
-  let inboundLeftover = new Uint8Array(0);
+  let inboundLeftover: Uint8Array = new Uint8Array(0);
 
   return {
     kind: "real-device",
