@@ -24,19 +24,22 @@
  *     doesn't permanently freeze the tiles.
  */
 
-import { genericBle } from "@/lib/generic-ble";
 import {
   NB,
-  NB_GATT,
   buildAuthPreComm,
   buildAuthSetPwd,
   buildReadRegister,
   buildWriteRegister,
   consumeFrames,
   decodeRegisterReply,
+  deriveSessionKey,
   type NinebotFrame,
   type NinebotTelemetry,
 } from "./protocol";
+import {
+  createMockTransport,
+  type NinebotTransport,
+} from "./transport";
 
 /**
  * Catalog of high-level commands the UI can send. Lifted to a tagged
@@ -95,8 +98,19 @@ const POLL_REGISTERS: { target: number; register: number; length: number }[] = [
   { target: NB.NODE.ESC, register: NB.REG.LOCK,       length: 1 },
 ];
 
+export interface NinebotSessionOptions {
+  /**
+   * Inject a transport. Defaults to the mock/passthrough transport, which
+   * is what the Lovable web preview and the existing in-process mock
+   * peripheral expect. Pass `createRealDeviceTransport()` from
+   * `./transport.ts` to route post-handshake frames through AES-128-CTR.
+   */
+  transport?: NinebotTransport;
+}
+
 export class NinebotSession {
   private events: NinebotSessionEvents;
+  private transport: NinebotTransport;
   private status: NinebotSessionStatus = "idle";
   private telemetry: NinebotTelemetry = {};
   private rxBuffer: Uint8Array = new Uint8Array(0);
@@ -106,10 +120,15 @@ export class NinebotSession {
   /** Resolved when AUTH_OK is observed, rejected on timeout. */
   private authResolve: (() => void) | null = null;
   private authReject: ((err: Error) => void) | null = null;
+  /** Captured device nonce from the AUTH_PRE_COMM reply (16 bytes). */
+  private deviceNonce: Uint8Array | null = null;
+  /** App nonce sent in AUTH_PRE_COMM, retained for KDF input on AUTH_OK. */
+  private appNonce: Uint8Array | null = null;
   private stopped = false;
 
-  constructor(events: NinebotSessionEvents = {}) {
+  constructor(events: NinebotSessionEvents = {}, options: NinebotSessionOptions = {}) {
     this.events = events;
+    this.transport = options.transport ?? createMockTransport();
   }
 
   /**
@@ -123,9 +142,7 @@ export class NinebotSession {
     if (this.status !== "idle") return;
     this.setStatus("subscribing");
     try {
-      this.unsubscribeNotify = await genericBle.startNotifications(
-        NB_GATT.SERVICE,
-        NB_GATT.CHAR_TX,
+      this.unsubscribeNotify = await this.transport.subscribe(
         (bytes) => this.onIncomingBytes(bytes),
       );
     } catch (e) {
@@ -158,6 +175,9 @@ export class NinebotSession {
       try { await this.unsubscribeNotify(); } catch { /* swallow */ }
       this.unsubscribeNotify = null;
     }
+    this.transport.setSessionKey(null);
+    this.appNonce = null;
+    this.deviceNonce = null;
     this.setStatus("stopped");
   }
 
@@ -194,9 +214,7 @@ export class NinebotSession {
       this.telemetry = { ...this.telemetry, ...optimistic };
       this.events.onTelemetry?.(this.telemetry);
     }
-    await genericBle.writeCharacteristic(
-      NB_GATT.SERVICE, NB_GATT.CHAR_RX, frame, false,
-    );
+    await this.transport.send(frame);
   }
 
   private setStatus(next: NinebotSessionStatus, detail?: string) {
@@ -221,10 +239,21 @@ export class NinebotSession {
   }
 
   private handleFrame(f: NinebotFrame) {
+    // Capture the device nonce as soon as the AUTH_PRE_COMM reply lands.
+    // The transport will need it (combined with our app nonce) to derive
+    // the session key once AUTH_OK acks the pairing.
+    if (f.cmd === NB.CMD.AUTH_PRE_COMM && f.payload.length === 16) {
+      this.deviceNonce = new Uint8Array(f.payload);
+      return;
+    }
     // Auth replies — only relevant while we're still negotiating, but
     // checking unconditionally is cheap and protects against late
     // duplicates from the device.
     if (f.cmd === NB.CMD.AUTH_OK && this.authResolve) {
+      // Derive the session key and install it on the transport. For the
+      // mock transport this is a no-op; for the real-device transport it
+      // arms AES-128-CTR for every subsequent frame.
+      void this.installSessionKey();
       this.authResolve();
       this.authResolve = null;
       this.authReject = null;
@@ -240,6 +269,18 @@ export class NinebotSession {
     }
   }
 
+  private async installSessionKey(): Promise<void> {
+    if (!this.appNonce || !this.deviceNonce) return;
+    try {
+      const key = await deriveSessionKey(this.appNonce, this.deviceNonce);
+      this.transport.setSessionKey(key);
+    } catch (e) {
+      // Don't kill the session — fall back to identity. The transport
+      // will treat a null key as plaintext, matching the mock.
+      this.events.onStatus?.(this.status, `key derivation failed: ${(e as Error).message}`);
+    }
+  }
+
   private async runHandshake(): Promise<void> {
     // Stage 1: write PRE_COMM with a fresh 16-byte nonce. We use
     // crypto.getRandomValues when available so the handshake doesn't
@@ -247,6 +288,9 @@ export class NinebotSession {
     // is in scope under the mock build.
     const appNonce = randomBytes(16);
     const sessionKey = randomBytes(16);
+    // Retain the app nonce so `installSessionKey()` can mix it with the
+    // device nonce captured from the AUTH_PRE_COMM reply.
+    this.appNonce = appNonce;
     const authPromise = new Promise<void>((resolve, reject) => {
       this.authResolve = resolve;
       this.authReject = reject;
@@ -260,9 +304,7 @@ export class NinebotSession {
     }, AUTH_TIMEOUT_MS);
 
     try {
-      await genericBle.writeCharacteristic(
-        NB_GATT.SERVICE, NB_GATT.CHAR_RX, buildAuthPreComm(appNonce), false,
-      );
+      await this.transport.send(buildAuthPreComm(appNonce));
       // Brief breather between PRE_COMM and SET_PWD so the device's
       // firmware-side state machine has actually advanced — real
       // hardware sometimes drops back-to-back writes inside one ATT
@@ -270,9 +312,7 @@ export class NinebotSession {
       await sleep(40);
       // Stage 2: commit the session key. The mock acks with AUTH_OK
       // immediately; production devices may take ~100ms.
-      await genericBle.writeCharacteristic(
-        NB_GATT.SERVICE, NB_GATT.CHAR_RX, buildAuthSetPwd(sessionKey), false,
-      );
+      await this.transport.send(buildAuthSetPwd(sessionKey));
       await authPromise;
     } finally {
       clearTimeout(timer);
@@ -298,11 +338,8 @@ export class NinebotSession {
     const spec = POLL_REGISTERS[this.pollIndex % POLL_REGISTERS.length];
     this.pollIndex += 1;
     try {
-      await genericBle.writeCharacteristic(
-        NB_GATT.SERVICE,
-        NB_GATT.CHAR_RX,
+      await this.transport.send(
         buildReadRegister(spec.target, spec.register, spec.length),
-        false,
       );
     } catch {
       // Swallow — the next interval tick will try again. We deliberately

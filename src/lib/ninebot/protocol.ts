@@ -359,16 +359,89 @@ export function formatTelemetryField(t: NinebotTelemetry, key: keyof NinebotTele
 /* -------------------------------------------------------------------------- */
 
 /**
- * Reserved seam for Encryption2's AES-128-CTR wrapper. Today the mock and
- * the bundled session run plaintext frames so the entire pipeline is
- * exerciseable without a paired hardware secret. When a real-device
- * transport lands, swap these to call WebCrypto with the key derived from
- * the AUTH_SET_PWD exchange. Keeping the seam here means the framer and
- * register decoders never need to learn about ciphers.
+ * AES-128-CTR seam used by the real-device transport (`./transport.ts`)
+ * for every post-handshake frame. When `key` is `null` we passthrough
+ * unchanged — that's the mode the mock peripheral and unit tests run in,
+ * and it's also the mode handshake frames (PRE_COMM / SET_PWD / AUTH_OK)
+ * use, since those are exchanged before any session key exists.
+ *
+ * Counter block: enc2 spec uses an all-zero 16-byte initial counter
+ * incremented per AES block. WebCrypto's AES-CTR mode handles the
+ * increment internally given `length: 64` (counter occupies the low 64
+ * bits, leaving 64 bits of nonce — matches what's been observed in RE'd
+ * Ninebot apps). The constant nonce IS a known weakness of plain CTR with
+ * key reuse; the protocol mitigates by rotating the session key at every
+ * handshake (which is per-connection, not per-device).
+ *
+ * Both functions are async because WebCrypto is async. Synchronous
+ * callers in the mock path can `await` them — identity passthrough still
+ * resolves on the same tick.
  */
-export function encryptPayload(payload: Uint8Array, _key: Uint8Array | null): Uint8Array {
-  return payload;
+export async function encryptPayload(
+  payload: Uint8Array,
+  key: Uint8Array | null,
+): Promise<Uint8Array> {
+  if (!key) return payload;
+  return aesCtr(payload, key);
 }
-export function decryptPayload(payload: Uint8Array, _key: Uint8Array | null): Uint8Array {
-  return payload;
+
+export async function decryptPayload(
+  payload: Uint8Array,
+  key: Uint8Array | null,
+): Promise<Uint8Array> {
+  if (!key) return payload;
+  // CTR is symmetric: encrypt and decrypt are the same operation.
+  return aesCtr(payload, key);
+}
+
+async function aesCtr(payload: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
+  if (key.length !== 16) throw new Error("Ninebot AES key must be 16 bytes");
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    throw new Error("WebCrypto subtle is required for Ninebot AES-128-CTR");
+  }
+  const ck = await crypto.subtle.importKey(
+    "raw", key as BufferSource, { name: "AES-CTR" }, false, ["encrypt", "decrypt"],
+  );
+  const counter = new Uint8Array(16); // zero IV; see header comment
+  const out = await crypto.subtle.encrypt(
+    { name: "AES-CTR", counter: counter as BufferSource, length: 64 },
+    ck,
+    payload as BufferSource,
+  );
+  return new Uint8Array(out);
+}
+
+/**
+ * Set of CMD codes that are exchanged in plaintext during the auth
+ * handshake. The transport layer uses this to decide whether to route a
+ * frame's payload through the cipher.
+ */
+export const HANDSHAKE_CMDS: ReadonlySet<number> = new Set([
+  NB.CMD.AUTH_PRE_COMM,
+  NB.CMD.AUTH_SET_PWD,
+  NB.CMD.AUTH_OK,
+]);
+
+/**
+ * Stub key-derivation function. The real Ninebot enc2 KDF mixes the APP
+ * nonce, the device nonce, and a per-model salt; the exact recipe varies
+ * across firmware revisions and is community-RE'd, not officially
+ * documented. Until we can validate against a paired scooter, we derive a
+ * 16-byte key from SHA-256(appNonce || devNonce) and take the first half.
+ * That's good enough to exercise the cipher path end-to-end and matches
+ * the shape observed in several open-source clients; it MUST be revisited
+ * before the real-device transport is enabled by default.
+ */
+export async function deriveSessionKey(
+  appNonce: Uint8Array,
+  devNonce: Uint8Array,
+): Promise<Uint8Array> {
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    throw new Error("WebCrypto subtle is required for Ninebot key derivation");
+  }
+  const buf = new Uint8Array(appNonce.length + devNonce.length);
+  buf.set(appNonce, 0);
+  buf.set(devNonce, appNonce.length);
+  const digest = await crypto.subtle.digest("SHA-256", buf as BufferSource);
+  return new Uint8Array(digest).slice(0, 16);
 }
