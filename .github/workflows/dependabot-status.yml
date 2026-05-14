@@ -1,0 +1,91 @@
+name: Dependabot Security Status
+
+# Reports a commit status check on the default branch summarising how many
+# Dependabot security PRs are currently open. Runs whenever Dependabot opens,
+# updates, or closes a PR, and on a 6-hourly cron so the badge stays fresh
+# even if no PR activity happened.
+on:
+  pull_request_target:
+    types: [opened, reopened, closed, labeled, unlabeled, synchronize]
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Count open Dependabot security PRs and post status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+
+            // Pull every open PR authored by Dependabot. Security advisory PRs
+            // are tagged "security" by our .github/dependabot.yml; we also
+            // accept the GitHub-managed `security` label that Dependabot adds
+            // automatically for advisory-driven PRs.
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: "open", per_page: 100,
+            });
+
+            const dependabot = prs.filter(
+              (p) => p.user && p.user.login === "dependabot[bot]",
+            );
+            const security = dependabot.filter((p) =>
+              (p.labels || []).some((l) => /security/i.test(l.name)),
+            );
+
+            const openCount = security.length;
+            const totalDependabot = dependabot.length;
+
+            // Pick which commit to attach the status to. On a PR event, use
+            // the PR head SHA so the check shows up on that PR. On cron /
+            // manual runs, attach to the default branch tip so the badge
+            // stays visible on the repo home.
+            let sha;
+            if (context.payload.pull_request) {
+              sha = context.payload.pull_request.head.sha;
+            } else {
+              const { data: branch } = await github.rest.repos.getBranch({
+                owner, repo, branch: context.payload.repository.default_branch,
+              });
+              sha = branch.commit.sha;
+            }
+
+            const state = openCount === 0 ? "success" : "pending";
+            const description =
+              openCount === 0
+                ? `No open Dependabot security PRs (${totalDependabot} other Dependabot PRs)`
+                : `${openCount} open security PR${openCount === 1 ? "" : "s"} — review needed`;
+
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha,
+              state,
+              context: "security/dependabot",
+              description: description.slice(0, 140),
+              target_url: `https://github.com/${owner}/${repo}/pulls?q=is%3Apr+is%3Aopen+author%3Aapp%2Fdependabot+label%3Asecurity`,
+            });
+
+            // Also surface a summary on the Actions run page so humans can
+            // see the list without clicking through to the PR search.
+            const lines = [
+              `## Dependabot security status`,
+              ``,
+              `- Open security PRs: **${openCount}**`,
+              `- Other open Dependabot PRs: **${totalDependabot - openCount}**`,
+              ``,
+            ];
+            if (security.length) {
+              lines.push(`### Open security PRs`, ``);
+              for (const p of security) {
+                lines.push(`- [#${p.number} ${p.title}](${p.html_url})`);
+              }
+            }
+            await core.summary.addRaw(lines.join("\n")).write();
