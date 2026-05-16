@@ -55,7 +55,9 @@ export function normalisePrefix(input: string): string | null {
   if (!trimmed) return null;
   try {
     const u = new URL(trimmed);
-    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    // Only https is allowed: trusted sources bypass SHA-256 verification, so
+    // plaintext http:// would let a MITM silently swap firmware bytes.
+    if (u.protocol !== "https:") return null;
     // Keep an explicit trailing slash for path-prefix entries so
     // "https://x.com/m365" doesn't accidentally match "https://x.com/m365-evil/...".
     let path = u.pathname || "/";
