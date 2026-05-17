@@ -40,7 +40,11 @@ const config: CapacitorConfig = {
     },
   },
   ios: { contentInset: "always" },
-  android: { allowMixedContent: true },
+  // allowMixedContent MUST stay false (or unset) — enabling it lets the
+  // Android WebView load plaintext http:// resources, which would bypass
+  // the https-only trusted-firmware-source policy. See
+  // src/test/capacitor-config.test.ts for the regression guard.
+  android: { allowMixedContent: false },
 };
 
 export default config;
