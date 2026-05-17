@@ -20,7 +20,7 @@ const config: CapacitorConfig = {
   appId: "app.lovable.12261e39904d41878cb069cbf7488579",
   appName: "ScootFlash",
   webDir: "dist",
-  bundledWebRuntime: false,
+  
 
   // Hot-reload from the Lovable sandbox. Comment this whole block out
   // before building for a real device if you want Bluetooth to work.
