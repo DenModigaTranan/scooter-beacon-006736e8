@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Capacitor regenerates parts of this file via `npx cap add ios` / `npx cap sync`.
+  The App Transport Security (ATS) block below MUST be preserved on every regen:
+
+    NSAllowsArbitraryLoads          = false   (no global cleartext)
+    NSAllowsArbitraryLoadsInWebContent = false (no cleartext in WKWebView)
+    NSAllowsLocalNetworking          = false  (no http:// to LAN hosts)
+    NSExceptionDomains               = <none> (no per-host cleartext escapes)
+
+  A regression guard lives at src/test/ios-ats.test.ts and fails the build
+  if any of these are flipped back to true / re-introduced.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>ScootFlash</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+    <key>UIMainStoryboardFile</key>
+    <string>Main</string>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>armv7</string>
+    </array>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <true/>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>ScootFlash needs Bluetooth to connect to your scooter.</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>ScootFlash needs Bluetooth to connect to your scooter.</string>
+    <!--
+      App Transport Security: HTTPS-only.
+      DO NOT add NSExceptionDomains or flip any of these to <true/>.
+    -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+        <key>NSAllowsArbitraryLoadsInWebContent</key>
+        <false/>
+        <key>NSAllowsArbitraryLoadsForMedia</key>
+        <false/>
+        <key>NSAllowsLocalNetworking</key>
+        <false/>
+    </dict>
+</dict>
+</plist>
