@@ -20,7 +20,7 @@ const config: CapacitorConfig = {
   appId: "app.lovable.12261e39904d41878cb069cbf7488579",
   appName: "ScootFlash",
   webDir: "dist",
-  bundledWebRuntime: false,
+  
 
   // Hot-reload from the Lovable sandbox. Comment this whole block out
   // before building for a real device if you want Bluetooth to work.
@@ -40,7 +40,11 @@ const config: CapacitorConfig = {
     },
   },
   ios: { contentInset: "always" },
-  android: { allowMixedContent: true },
+  // allowMixedContent MUST stay false (or unset) — enabling it lets the
+  // Android WebView load plaintext http:// resources, which would bypass
+  // the https-only trusted-firmware-source policy. See
+  // src/test/capacitor-config.test.ts for the regression guard.
+  android: { allowMixedContent: false },
 };
 
 export default config;
