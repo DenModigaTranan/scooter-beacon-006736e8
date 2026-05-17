@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTPS-only policy for the ScootFlash Android WebView.
+
+  cleartextTrafficPermitted="false" blocks every http:// load (catalog fetches,
+  firmware downloads, asset loads, redirects). Do not add <domain-config> entries
+  that re-enable cleartext for "just one host" - the firmware integrity model
+  depends on TLS for trusted-source prefixes.
+
+  Guarded by src/test/android-manifest.test.ts.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
