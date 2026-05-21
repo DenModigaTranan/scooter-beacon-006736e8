@@ -32,11 +32,31 @@ export function getCatalogUrl(): string {
   return localStorage.getItem(STORAGE_KEY) || DEFAULT_CATALOG_URL;
 }
 
+/**
+ * Persist a custom catalog URL. Only https:// is accepted — a plaintext
+ * http catalog could be MITM'd to substitute malicious firmware entries
+ * (the attacker would control both the SHA-256 and the firmware bytes,
+ * defeating the integrity check). Pass an empty string to reset to default.
+ */
 export function setCatalogUrl(url: string): void {
   if (typeof localStorage === "undefined") return;
-  if (url.trim()) localStorage.setItem(STORAGE_KEY, url.trim());
-  else localStorage.removeItem(STORAGE_KEY);
+  const trimmed = url.trim();
+  if (!trimmed) {
+    localStorage.removeItem(STORAGE_KEY);
+    return;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error("Invalid URL — must be https://");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error("Invalid URL — must be https://");
+  }
+  localStorage.setItem(STORAGE_KEY, trimmed);
 }
+
 
 import { XIAOMI_MODEL_IDS, NINEBOT_MODEL_IDS, ALL_MODEL_IDS } from "./models";
 

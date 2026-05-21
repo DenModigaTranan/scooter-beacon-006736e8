@@ -176,8 +176,12 @@ export function SettingsScreen() {
   };
 
   const onSave = () => {
-    setCatalogUrl(url);
-    toast.success("Catalog URL saved");
+    try {
+      setCatalogUrl(url);
+      toast.success(url.trim() ? "Catalog URL saved" : "Reset to default");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Invalid URL — must be https://");
+    }
   };
 
   const exportLog = async () => {
