@@ -129,7 +129,7 @@ jobs:
           echo "--- patched build.gradle ---"
           cat "$GRADLE_FILE"
 
-      - name: Build release APK (signed)
+      - name: Build release APK + AAB (signed)
         if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         env:
           ANDROID_KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
@@ -139,12 +139,12 @@ jobs:
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
 
       - name: Build debug APK (fallback — no signing secrets configured)
         if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
         run: |
-          echo "::warning ::ANDROID_KEYSTORE_BASE64 not set — producing an UNSIGNED debug APK. See workflow file for setup."
+          echo "::warning ::ANDROID_KEYSTORE_BASE64 not set — producing an UNSIGNED debug APK (no AAB; Play Store requires a signed bundle). See workflow file for setup."
           cd android
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
@@ -162,23 +162,46 @@ jobs:
           echo "path=$DEST" >> "$GITHUB_OUTPUT"
           ls -lh "$DEST"
 
-      - name: Generate SHA256 checksum
+      - name: Locate AAB (signed builds only)
+        id: aab
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          AAB=$(find android/app/build/outputs/bundle -name "*.aab" | head -n1)
+          if [ -z "$AAB" ]; then
+            echo "::error ::No AAB produced"
+            exit 1
+          fi
+          DEST="scootflash-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}.aab"
+          cp "$AAB" "$DEST"
+          echo "path=$DEST" >> "$GITHUB_OUTPUT"
+          ls -lh "$DEST"
+
+      - name: Generate SHA256 checksums
         id: checksum
         run: |
           APK="${{ steps.apk.outputs.path }}"
-          SUM_FILE="${APK}.sha256"
-          sha256sum "$APK" > "$SUM_FILE"
-          echo "--- $SUM_FILE ---"
-          cat "$SUM_FILE"
-          echo "path=$SUM_FILE" >> "$GITHUB_OUTPUT"
+          APK_SUM="${APK}.sha256"
+          sha256sum "$APK" > "$APK_SUM"
+          cat "$APK_SUM"
+          echo "apk_sum=$APK_SUM" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APK as workflow artifact
+          AAB="${{ steps.aab.outputs.path }}"
+          if [ -n "$AAB" ] && [ -f "$AAB" ]; then
+            AAB_SUM="${AAB}.sha256"
+            sha256sum "$AAB" > "$AAB_SUM"
+            cat "$AAB_SUM"
+            echo "aab_sum=$AAB_SUM" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload APK + AAB as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: scootflash-apk
+          name: scootflash-android
           path: |
             ${{ steps.apk.outputs.path }}
-            ${{ steps.checksum.outputs.path }}
+            ${{ steps.checksum.outputs.apk_sum }}
+            ${{ steps.aab.outputs.path }}
+            ${{ steps.checksum.outputs.aab_sum }}
           if-no-files-found: error
           retention-days: 30
 
@@ -188,6 +211,9 @@ jobs:
         with:
           files: |
             ${{ steps.apk.outputs.path }}
-            ${{ steps.checksum.outputs.path }}
+            ${{ steps.checksum.outputs.apk_sum }}
+            ${{ steps.aab.outputs.path }}
+            ${{ steps.checksum.outputs.aab_sum }}
           generate_release_notes: true
+
 
