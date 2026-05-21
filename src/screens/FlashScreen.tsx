@@ -302,6 +302,18 @@ export function FlashScreen() {
     } else if (selected) {
       try {
         if (selected.url) {
+          // Supply-chain: refuse plaintext firmware URLs. A MITM on http://
+          // could swap bytes; combined with placeholder SHA-256 entries this
+          // would silently flash attacker-controlled firmware.
+          let parsedFwUrl: URL;
+          try {
+            parsedFwUrl = new URL(selected.url);
+          } catch {
+            throw new Error("Invalid firmware URL");
+          }
+          if (parsedFwUrl.protocol !== "https:") {
+            throw new Error("Firmware URL must be https://");
+          }
           appendLog(`> downloading ${selected.url}`);
           const r = await fetch(selected.url, { signal: ac.signal });
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
