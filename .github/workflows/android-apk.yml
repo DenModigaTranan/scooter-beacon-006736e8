@@ -162,11 +162,23 @@ jobs:
           echo "path=$DEST" >> "$GITHUB_OUTPUT"
           ls -lh "$DEST"
 
+      - name: Generate SHA256 checksum
+        id: checksum
+        run: |
+          APK="${{ steps.apk.outputs.path }}"
+          SUM_FILE="${APK}.sha256"
+          sha256sum "$APK" > "$SUM_FILE"
+          echo "--- $SUM_FILE ---"
+          cat "$SUM_FILE"
+          echo "path=$SUM_FILE" >> "$GITHUB_OUTPUT"
+
       - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: scootflash-apk
-          path: ${{ steps.apk.outputs.path }}
+          path: |
+            ${{ steps.apk.outputs.path }}
+            ${{ steps.checksum.outputs.path }}
           if-no-files-found: error
           retention-days: 30
 
@@ -174,5 +186,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.apk.outputs.path }}
+          files: |
+            ${{ steps.apk.outputs.path }}
+            ${{ steps.checksum.outputs.path }}
           generate_release_notes: true
+
