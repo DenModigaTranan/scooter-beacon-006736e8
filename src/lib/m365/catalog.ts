@@ -3,6 +3,8 @@
  * Catalog is just a remotely-hosted JSON. The default URL points to a
  * placeholder you can swap from Settings — no app rebuild needed.
  */
+import { assertHttpsUrl } from "@/lib/https-url";
+
 
 export interface FirmwareEntry {
   id: string;
