@@ -24,6 +24,7 @@ import { FlashLogConsole } from "@/components/FlashLogConsole";
 import { formatBytes, formatDuration, formatRate } from "@/lib/format";
 import { recordPairedFlash } from "@/lib/paired-profiles";
 import { findTrustedSource } from "@/lib/trusted-sources";
+import { downloadFirmware } from "@/lib/firmware-download";
 
 type Target = "DRV" | "BMS" | "BLE";
 type Step = 1 | 2 | 3 | 4 | 5;
