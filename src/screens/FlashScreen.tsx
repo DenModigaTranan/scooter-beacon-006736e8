@@ -24,6 +24,7 @@ import { FlashLogConsole } from "@/components/FlashLogConsole";
 import { formatBytes, formatDuration, formatRate } from "@/lib/format";
 import { recordPairedFlash } from "@/lib/paired-profiles";
 import { findTrustedSource } from "@/lib/trusted-sources";
+import { downloadFirmware } from "@/lib/firmware-download";
 
 type Target = "DRV" | "BMS" | "BLE";
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -302,22 +303,12 @@ export function FlashScreen() {
     } else if (selected) {
       try {
         if (selected.url) {
-          // Supply-chain: refuse plaintext firmware URLs. A MITM on http://
-          // could swap bytes; combined with placeholder SHA-256 entries this
-          // would silently flash attacker-controlled firmware.
-          let parsedFwUrl: URL;
-          try {
-            parsedFwUrl = new URL(selected.url);
-          } catch {
-            throw new Error("Invalid firmware URL");
-          }
-          if (parsedFwUrl.protocol !== "https:") {
-            throw new Error("Firmware URL must be https://");
-          }
+          // Supply-chain: downloadFirmware refuses non-https URLs BEFORE
+          // issuing the request. A MITM on http:// could swap bytes;
+          // combined with placeholder SHA-256 entries this would
+          // silently flash attacker-controlled firmware.
           appendLog(`> downloading ${selected.url}`);
-          const r = await fetch(selected.url, { signal: ac.signal });
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          firmwareBytes = new Uint8Array(await r.arrayBuffer());
+          firmwareBytes = await downloadFirmware(selected.url, { signal: ac.signal });
           setDownloadedBytes(firmwareBytes.length);
           appendLog(`> downloaded ${formatBytes(firmwareBytes.length)}`);
 
