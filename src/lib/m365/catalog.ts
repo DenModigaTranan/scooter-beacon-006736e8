@@ -45,17 +45,11 @@ export function setCatalogUrl(url: string): void {
     localStorage.removeItem(STORAGE_KEY);
     return;
   }
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    throw new Error("Invalid URL — must be https://");
-  }
-  if (parsed.protocol !== "https:") {
-    throw new Error("Invalid URL — must be https://");
-  }
+  // Throws InsecureUrlError if not https — surfaced as toast by SettingsScreen.
+  assertHttpsUrl(trimmed, "Catalog URL");
   localStorage.setItem(STORAGE_KEY, trimmed);
 }
+
 
 
 import { XIAOMI_MODEL_IDS, NINEBOT_MODEL_IDS, ALL_MODEL_IDS } from "./models";
