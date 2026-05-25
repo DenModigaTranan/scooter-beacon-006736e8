@@ -1,52 +1,46 @@
-import { Cpu } from "lucide-react";
-import { PROFILES, useProfile, type ScooterProfile } from "@/lib/profile";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Bluetooth, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { clearProfile, getProfileMeta, useProfile } from "@/lib/profile";
 import { toast } from "sonner";
 
+/**
+ * Single "active scooter" panel. The profile is now picked automatically
+ * by the unified auto-detect scan screen, so this no longer offers the
+ * old multi-protocol dropdown — instead it just shows what was detected
+ * and lets the user kick off a fresh scan.
+ */
 export function ProfilePicker() {
-  const [profile, setProfile] = useProfile();
-  const active = profile ?? "xiaomi-m365";
-  const meta = PROFILES.find((p) => p.key === active)!;
+  const [profile] = useProfile();
+  const meta = profile ? getProfileMeta(profile) : null;
 
-  const onChange = (next: string) => {
-    const nextProfile = next as ScooterProfile;
-    setProfile(nextProfile);
-    const nextMeta = PROFILES.find((p) => p.key === nextProfile)!;
-    toast.success(`Profile: ${nextMeta.label}`);
+  const onReset = () => {
+    clearProfile();
+    toast("Re-scanning Bluetooth…");
   };
 
   return (
     <div className="panel p-4">
       <div className="flex items-center gap-2 mb-3">
-        <Cpu className="w-4 h-4 text-primary-glow" />
-        <div className="mono text-[11px] tracking-[0.2em] uppercase">Profile</div>
+        <Bluetooth className="w-4 h-4 text-primary-glow" />
+        <div className="mono text-[11px] tracking-[0.2em] uppercase">Active scooter</div>
       </div>
 
-      <Select value={active} onValueChange={onChange}>
-        <SelectTrigger className="mono">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {PROFILES.map((p) => (
-            <SelectItem key={p.key} value={p.key} className="mono">
-              <div className="flex items-center gap-2">
-                <span>{p.label}</span>
-                {p.status === "coming-soon" && (
-                  <span className="chip text-[9px] tracking-[0.18em] text-warning">SOON</span>
-                )}
-              </div>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="mono text-sm text-foreground">
+        {meta?.label ?? "—"}
+      </div>
+      <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+        {meta?.description ?? "No scooter detected yet."}
+      </p>
 
-      <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">{meta.description}</p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={onReset}
+        className="mono tracking-widest mt-3 w-full"
+      >
+        <RefreshCw className="w-3.5 h-3.5 mr-2" /> RE-DETECT SCOOTER
+      </Button>
     </div>
   );
 }
