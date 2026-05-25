@@ -106,6 +106,15 @@ export function setProfile(p: ScooterProfile): void {
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: p }));
 }
 
+/**
+ * Forget the active profile so the app re-enters the unified auto-detect
+ * scan screen. Used by the "Re-detect scooter" action in Settings.
+ */
+export function clearProfile(): void {
+  localStorage.removeItem(STORAGE_KEY);
+  window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: null as unknown as ScooterProfile }));
+}
+
 export function getProfileMeta(p: ScooterProfile): ProfileMeta {
   return PROFILES.find((x) => x.key === p) ?? PROFILES[0];
 }
