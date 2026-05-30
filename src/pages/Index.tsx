@@ -14,6 +14,7 @@ import { HeaderBar, TabBar, type TabKey } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProfileBanner } from "@/components/ProfileBanner";
 import { CompatibilityBadge } from "@/components/CompatibilityBadge";
+import { FloatingControlBar } from "@/components/FloatingControlBar";
 import { getProfileMeta, isNinebotCompatible, useProfile } from "@/lib/profile";
 
 const titles: Record<TabKey, string> = {
@@ -42,35 +43,42 @@ const Index = () => {
   if (profile === "generic-ble") {
     const profileLabel = getProfileMeta(profile).shortLabel;
     return (
-      <div className="min-h-screen pb-6">
+      <div className="min-h-screen pb-24">
         <HeaderBar title="Generic BLE" profileLabel={profileLabel} />
         <main className="max-w-md mx-auto">
           <GenericBleScreen />
         </main>
+        <FloatingControlBar bottomOffset="1rem" />
       </div>
     );
   }
 
-  // Ninebot, E-wheels and EWA all share the Ninebot BLE stack — route them
-  // through the dedicated Ninebot screen which owns its own scan/connect flow.
   if (isNinebotCompatible(profile)) {
     const profileLabel = getProfileMeta(profile).shortLabel;
     return (
-      <div className="min-h-screen pb-6">
+      <div className="min-h-screen pb-24">
         <HeaderBar title={`${profileLabel} Scooter`} profileLabel={profileLabel} />
         <main className="max-w-md mx-auto">
           <NinebotScreen />
         </main>
+        <FloatingControlBar bottomOffset="1rem" />
       </div>
     );
   }
 
-  if (state !== "connected") return <ConnectScreen />;
+  if (state !== "connected") {
+    return (
+      <>
+        <ConnectScreen />
+        <FloatingControlBar bottomOffset="1rem" />
+      </>
+    );
+  }
 
   const profileLabel = getProfileMeta(profile).shortLabel;
 
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-36">
       <HeaderBar
         title={titles[tab]}
         profileLabel={profileLabel}
@@ -92,6 +100,7 @@ const Index = () => {
         {tab === "flash" && <FlashScreen />}
         {tab === "settings" && <SettingsScreen />}
       </main>
+      <FloatingControlBar bottomOffset="4.5rem" />
       <TabBar active={tab} onChange={setTab} />
     </div>
   );
