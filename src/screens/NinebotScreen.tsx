@@ -24,6 +24,7 @@ import { NB_GATT, formatTelemetryField, type NinebotTelemetry } from "@/lib/nine
 import { NinebotSession, type NinebotCommand, type NinebotSessionStatus } from "@/lib/ninebot/session";
 import { matchNinebotModel, type NinebotModel } from "@/lib/ninebot-models";
 import { cn } from "@/lib/utils";
+import { useRegisterScooterControls, type ScooterControlsSnapshot } from "@/lib/controls-context";
 
 interface TelemetryTile {
   icon: typeof Battery;
@@ -207,6 +208,26 @@ export default function NinebotScreen() {
   // without the user having to scroll into the scan panel below. The
   // screen itself owns the orchestration; we're just listening.
   const [bleDiag, setBleDiag] = useState<GenericBleDiagnostics | null>(null);
+
+  // Publish the live session to the app-wide floating control bar so the
+  // lock/lights/horn buttons work from any screen, not just here. The
+  // snapshot is memoised on the values it actually depends on so the
+  // provider doesn't re-render on every telemetry tick.
+  const controlsSnapshot = useMemo<ScooterControlsSnapshot>(
+    () => ({
+      available: status === "polling",
+      locked: telemetry.locked,
+      unavailableReason:
+        status === "polling"
+          ? undefined
+          : hasNinebot
+            ? "Authenticating with scooter…"
+            : "Connect to a Ninebot scooter to enable controls.",
+      sendCommand: (cmd) => sendCommand(cmd),
+    }),
+    [status, telemetry.locked, hasNinebot, sendCommand],
+  );
+  useRegisterScooterControls(controlsSnapshot);
 
   return (
     <div className="min-h-screen pb-6">
